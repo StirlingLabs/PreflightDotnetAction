@@ -642,23 +642,23 @@ runs:
       isLibrary: ${{ inputs.library }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
-    run: | #TODO: rework failure mode
+    run: | 
       # Process C# projects to ensure PackageOutputPath & GeneratePackageOnBuild is set correctly
       main() {
-        count=0 ; isLibrary="${isLibrary,,}" ; error=false
+        isLibrary="${isLibrary,,}" ; error="false"
+        echo -e "### Build details\n|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        
         for project in "${realProjects[@]}" ; do
-          count=$((count+1))
-          echo "$count. $project"
-          echo -e "### $(projectName "$project")\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
 
           # PackageOutputPath
           package="PackageOutputPath"
           if [[ $(nodeHasValue "$project" "$package" "$packageOutputPath") == "true" ]] ; then
-            good "$package" "$packageOutputPath"
+            good "$project" "$package"
           else
             msg="\`$package\` should be set to \`$packageOutputPath\`."
             detail="To do this, add the following excerpt to $project:\n$(propertyGroupExcerpt "$package" "$packageOutputPath")"
-            bad "$package" "$msg" "$detail"
+            bad "$project" "$package" "$msg" "$detail"
+            error="true"
           fi
 
           # GeneratePackageOnBuild
@@ -667,32 +667,47 @@ runs:
           detail="To set:\n\`\`\`xml\n<PropertyGroup>\n  <$package>$isLibrary</$package>\n</PropertyGroup>\n\`\`\`\n"
           if [[ $(nodeExists "$project" "$package") == "true" ]] ; then
             if [[ $(nodeHasValue "$project" "$package" "$isLibrary") == "true" ]] ; then
-              good "$package" "$isLibrary"
+              good "$project" "$package"
             else
-              bad "$package" "$msg" "$detail"
+              bad "$project" "$package" "$msg" "$detail"
+              error="true"
             fi
           else
             if [[ "$isLibrary" == "false" ]] ; then
-              good "$package" "Not assigned"
+              good "$project" "$package"
             else
-              bad "$package" "$msg" "$detail"
+              bad "$project" "$package" "$msg" "$detail"
+              error="true"
             fi
           fi
-          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
         done
-        [[ "$strict" == "true" ]] && [[ "$error" == "true" ]] && echo "## Errors occurred, view log for details." >> "$GITHUB_STEP_SUMMARY" && exit 1
+
+        echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        if [[ "error" == "true" ]] ; then
+          if [[ "$strict" == "true" ]] ; then
+            fail "One or more problems found with logging, check log for."
+          else
+            echo "## Errors occurred, view log for details." >> "$GITHUB_STEP_SUMMARY"
+          fi
+        fi
       }
 
-      function good {
-        [[ "$verbose" != "true" ]] && echo -e "| ✅ | $1 | |" >> "$GITHUB_STEP_SUMMARY"
+      function printGood {
+        local proj="$(projectName "$1")" ; local package="$2"
+        [[ "$verbose" != "true" ]] && echo -e "| ✅ | $proj | $package |  |" >> "$GITHUB_STEP_SUMMARY"
       }
 
-      function bad {
-        local emoji ;
-        [[ "$strict" == "false" ]] && emoji="⚠️" || emoji="❌"
-        echo "| $emoji | $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"
-        echo -e "$emoji $2 $3" >> GITHUB_OUTPUT
-        error="true"
+      function printOkay {
+        local proj="$(projectName "$1")" ; local package="$2" ; local msg="$3" ; local detail="$4"
+        echo "| ⚠️ | $proj | $2 | $3 |" >> "$GITHUB_STEP_SUMMARY"
+        echo -e "⚠️ $1 $2 $3 $4" >&2
+      }
+
+      function printBad {
+        local proj="$(projectName "$1")" ; local package="$2" ; local msg="$3" ; local detail="$4"
+        echo "| ❌ | $proj | $2 | $3 |" >> "$GITHUB_STEP_SUMMARY"
+        echo -e "❌ $1 $2 $3 $4" >&2
       }
 
       function projectName {
