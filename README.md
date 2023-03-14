@@ -1,3 +1,5 @@
+# ![StirlingLabs.Tests](https://raw.githubusercontent.com/StirlingLabs/PreflightDotnetAction/main/PreflightAction.jpg)
+
 # 📦 Preflight Dotnet Project Action
 
 > Preflight a Solution and Project files according to Stirling Labs' standards
@@ -14,20 +16,17 @@
         if: runner.os == 'Linux'
         uses: StirlingLabs/PreflightDotnetAction@main
         with:
-          coreName: ${{ needs.meta.outputs.coreName }}
-          solution: ${{ inputs.solution }}
-          gitUrl: ${{ needs.meta.outputs.gitUrl }}
-          homepage: ${{ needs.meta.outputs.homepage }}
-          defaultBranch: ${{ needs.meta.outputs.defaultBranch }}
+          solution: name.sln
+          library: true
+          strict: true
+          verbose: true
 ```
 
 ## Parameters
 
 |Name|Function|
 |-|-|
-|id|The NuPkg ID (e.g. StirlingLabs.Utilities.Magic)|
-|version|Package version number.|
-|title|Display title of the NuPkg, visible on nuget.org.|
-|description|Description of the NuPkg, indexed and visible on nuget.org.|
-|authors|Metadata authors of the NuPkg.|
-|etc|...|
+|solution|string|Path to the .sln|optional|
+|library|boolean|Does this project produce a library (as opposed to executable)?|true|
+|strict|boolean|Be strict with compliance?|true|
+|verbose|boolean|Verbose output or terse?|true|

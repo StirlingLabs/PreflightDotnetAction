@@ -1,118 +1,137 @@
 inputs:
-  strict:
-    description: Strict adherence to requirements
-    type: boolean
-    default: true
-  coreName:
-    description: Minimal project name
-    type: string
-    required: true
   solution:
     description: Solution file name
     type: string
     required: false
-  homepage:
-    description: Project homepage
-    type: string
-    required: true
-  gitUrl:
-    description: Project git URL
-    type: string
-    required: true
-  defaultBranch:
-    description: Name of the default branch of the project
-    type: string
-    required: true
+  library:
+    description: Is this project a library or executable?
+    type: boolean
+    default: true
+  strict:
+    description: Strict adherence to requirements
+    type: boolean
+    default: true
+  verbose:
+    description: Verbose output or terse
+    type: boolean
+    default: true
 outputs:
   continue:
     description: Successfully passed all preflight checks
     value: ${{ steps.create.outputs.success }}
-  githubLogger:
-    description: GitHub Actions Logger is present
-    value: ${{ steps.logging.outputs.githubActions }} #TODO: Ensure this exists
-  msbuildCoverlet:
-    description: Presence of `coverlet.msbuild` NuPkg
-    value: ${{ steps.logging.outputs.msbuildCoverlet }} #TODO: Ensure this exists
 
 runs:
   using: 'composite'
   steps:
   - name: Debugging
-    if: false
+    if: true
     shell: bash
     env:
       GITHUB_CONTEXT: ${{ toJSON(github) }}
-    run: echo "$GITHUB_CONTEXT"
+      fromJsonTrue: ${{ fromJSON('true') }}
+      fromJsonFalse: ${{ fromJSON('false') }}
+      fromTextTrue: True
+      fromTextFalse: False
+      fromTextTrueLowercase: true
+      fromTextFalseLowercase: false
+      fromInputBoolean: ${{ inputs.strict }}
+    run: |
+      main() {
+        [[ $fromJsonTrue ]] && echo "true - fromJsonTrue=$fromJsonTrue" || echo "false - fromJsonTrue=$fromJsonTrue"
+        [[ $fromJsonFalse ]] && echo "true - fromJsonFalse=$fromJsonFalse" || echo "false - fromJsonFalse=$fromJsonFalse"
+        [[ $fromTextTrue ]] && echo "true - fromTextTrue=$fromTextTrue" || echo "false - fromTextTrue=$fromTextTrue"
+        [[ $fromTextFalse ]] && echo "true - fromTextFalse=$fromTextFalse" || echo "false - fromTextFalse=$fromTextFalse"
+        [[ "$fromJsonTrue" == "true" ]] && echo "fromJsonTrue is true" || echo "fromJsonTrue is false"
+        [[ "$fromJsonFalse" == "true" ]] && echo "fromJsonFalse is true" || echo "fromJsonFalse is false"
+        [[ "$fromTextTrue" == "true" ]] && echo "fromTextTrue is true" || echo "fromTextTrue is false"
+        [[ "$fromTextFalse" == "true" ]] && echo "fromTextFalse is true" || echo "fromTextFalse is false"
+        [[ "$fromTextTrueLowercase" == "true" ]] && echo "fromTextTrueLowercase is true" || echo "fromTextTrueLowercase is false"
+        [[ "$fromTextFalseLowercase" == "true" ]] && echo "fromTextFalseLowercase is true" || echo "fromTextFalseLowercase is false"
+        [[ "$fromInputBoolean" == "true" ]] && echo "fromInputBoolean is true" || echo "fromInputBoolean is false"
+        echo -e "fromJsonTrue=$fromJsonTrue\nfromJsonFalse=$fromJsonFalse\nfromTextTrue=$fromTextTrue\nfromTextFalse=$fromTextFalse\nfromTextTrueLowercase=$fromTextTrueLowercase\nfromTextFalseLowercase=$fromTextFalseLowercase\nfromInputBoolean=$fromInputBoolean"
+        echo -e "\n$GITHUB_CONTEXT"
+      }
+      main "$@" ; exit
 
   - name: Set Values
     id: values
     shell: bash
     env:
       packageOutputPath: "../artifacts"
-    run: |
-      echo "packageOutputPath=$packageOutputPath" >> "$GITHUB_OUTPUT"
-
-  - name: Find Solution
-    id: discover
-    shell: bash
-    env:
-      corename: ${{ inputs.coreName }}
+      projectExtension: ".csproj"
       solution: ${{ inputs.solution }}
+      strict: ${{ inputs.strict }}
+      verbose: ${{ inputs.verbose }}
     run: |
       main() {
+        echo "packageOutputPath=$packageOutputPath" >> "$GITHUB_OUTPUT"
+        echo "projectExtension=$projectExtension" >> "$GITHUB_OUTPUT"
+
+        # Find Solution
         echo "Checking solution $solution"
-        if [[ "$solution" != "" ]] ; then
+        if [[ ! -f "$solution" ]] ; then
           [[ "$solution" != *".sln" ]] && solution="${solution}.sln"
-          [[ ! -f "$solution" ]] && fail "Solution not found at $solution"
+          if [[ ! -f "$solution" ]] ; then
+            echo "Searching for Solution..."
+            solution="$(find . -name '*.sln')" || fail "Problem finding solution: $solution"
+            count="$(echo "$solution" | grep ".sln" --count --only-matching)" || fail "Problem counting solutions: $count"
+            if [[ "$count" -ne 1 ]] ; then
+              fail "${count} solutions found!\nIf a single solution file is not in the root directory, specify _one_ with the \`solution\` input.\n$solution"
+            fi
+          fi
         fi
-        echo "Checking corename $corename"
-        if [[ "$corename" != "" ]] ; then
-          [[ -f "${corename}.sln" ]] && solution="${corename}.sln" || echo "${corename}.sln isn't solution"
-        fi
-        if [[ "$solution" == "" ]] ; then
-          echo "Searching for Solution..."
-          solution="$(find . -name '*.sln')"
-          count=$(echo "$solution" | wc -l | xargs)
-          [[ "$solution" == "" ]] && fail "No solution found!"
-          [[ $count -ne 1 ]] && fail "Error: Too many solutions ($count): ${solutions}"
-        fi
-        [[ "$solution" == "" ]] && fail "Solution not found." || echo "sln=$solution" >> "$GITHUB_OUTPUT"
+        echo "solution=$solution" >> "$GITHUB_OUTPUT"
+
+        echo "### Processing $solution" >> "$GITHUB_STEP_SUMMARY"
+
+        strict="${strict,,}"
+        [[ "$strict" == "false" ]] && heading="🔴 Strict Mode: OFF" || heading="🟢 Strict Mode: ON"
+        echo "strict=$strict" >> "$GITHUB_OUTPUT"
+
+        verbose="${verbose,,}"
+        [[ "$verbose" == "false" ]] && heading="$heading Verbose: OFF" || heading="$heading Verbose: ON"
+        echo "verbose=$verbose" >> "$GITHUB_OUTPUT"
+
+        echo "#### ${heading}" >> "$GITHUB_STEP_SUMMARY"
       }
 
       function fail {
         printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
-        errors="$errors\n$1" && echo "errors=$errors" >> GITHUB_OUTPUT
-        [[ "$strict" == "false" ]] && echo "Continuing" || exit "${2-1}" ## Returncode specified by $2, or 1 by default.
+        echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
+        exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
       main "$@" ; exit
 
   - name: Version.Net Existance
-    id: versionNet
+    id: version-existance
     shell: bash
     env:
-      versionNetProj: "Version.proj"
-      strict: ${{ inputs.strict }}
+      filename: Version.proj
+      submoduleDir: StirlingLabs.Version
+      strict: ${{ steps.values.outputs.strict }}
+      verbose: ${{ steps.values.outputs.verbose }}
     run: |
       main() {
-        echo "Checking for submodule"
-        if [[ ! -d "StirlingLabs.Version" ]] ; then
-          msg="Install https://github.com/StirlingLabs/Version.Net"
-          msg="${msg}\n```shell\n> git submodule add -b master -- \"git@github.com:StirlingLabs/Version.Net.git\" \"StirlingLabs.Version\"\n```"
-          fail "StirlingLabs.Version not found.\n$msg"
+        echo "Checking for Version.Net submodule"
+        if [[ ! -d "submoduleDir" ]] ; then
+          msg="Install [https://github.com/StirlingLabs/Version.Net](Version.Net) as specified in the README.md"
+          [[ "$strict" == "true" ]] && fail "Version.Net not found at $submoduleDir. $msg"
         fi
-        echo "Checking for $versionNetProj"
-        if [[ -f "$versionNetProj" ]] ; then
-          echo "proj=$versionNetProj" >> "$GITHUB_OUTPUT"
+
+        echo "Checking for Version.Net project file"
+        if [[ -f "$filename" ]] ; then
+          echo "projFile=$(realpath "$filename")" >> "$GITHUB_OUTPUT"
+          echo "✅ Version.Net" >> "$GITHUB_STEP_SUMMARY"
         else
-          msg="No $versionNetProj detected, please create one as per https://github.com/StirlingLabs/Version.Net#how-do-i-install-it"
-          fail "$versionNetProj not found.\n$msg"
+          msg="Please create $filename as per [readme](https://github.com/StirlingLabs/Version.Net#how-do-i-install-it)"
+          fail "$filename not found. $msg"
         fi
       }
 
       function fail {
         printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
-        errors="$errors\n$1" && echo "errors=$errors" >> GITHUB_OUTPUT
-        [[ "$strict" == "false" ]] && echo "Continuing" || exit "${2-1}" ## Returncode specified by $2, or 1 by default.
+        echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
+        exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
       main "$@" ; exit
 
@@ -120,22 +139,28 @@ runs:
     id: install
     shell: bash
     env:
-      emptyDir: "this_is_an_empty_dir__but_it_wont_be_empty_long" # Appologies to Nick Cave
+      emptyDir: 'this_is_an_empty_dir__but_it_wont_be_empty_long' # Appologies to Nick Cave
+      strict: true
+      verbose: ${{ steps.values.outputs.verbose }}
     run: |
       main() {
-        # Install csprojcli -- which unfortunately cannot be done in a dir with multiple projects
-        [[ -f "$emptyDir" ]] && fail "There is a file called $emptyDir !!"
+        # Install csprojcli -- which unfortunately cannot be done in a dir with multiple projects below it
+        [[ -f "$emptyDir" ]] && fail "There is a file called $emptyDir please remove it!!"
         mkdir -p "$emptyDir" || fail "Could not create $emptyDir"
         cd "$emptyDir" || fail "Could not change into $emptyDir"
-        dotnet tool install -g csprojcli || fail "Problem installing csprojcli."
+        dotnet tool install -g csprojcli fail "Problem installing csprojcli."
         cd ..
         rmdir "$emptyDir" || fail "Could not remove $emptyDir"
+        if csprojcli="$(which csprojcli)" ; then
+          echo "csprojcli installed in $csprojcli"
+          echo "✅ csprojcli installed" >> "$GITHUB_STEP_SUMMARY"
+        fi
       }
 
       function fail {
         printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
-        errors="$errors\n$1" && echo "errors=$errors" >> GITHUB_OUTPUT
-        [[ "$strict" == "false" ]] && echo "Continuing" || exit "${2-1}" ## Returncode specified by $2, or 1 by default.
+        echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
+        exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
       main "$@" ; exit
 
@@ -143,261 +168,364 @@ runs:
     id: solution
     shell: bash
     env:
-      solution: ${{ steps.discover.outputs.solution }}
+      solution: ${{ steps.values.outputs.solution }}
+      projectExtension: ${{ steps.values.outputs.projectExtension }}
+      strict: ${{ steps.values.outputs.strict }}
+      verbose: ${{ steps.values.outputs.verbose }}
     run: |
       main() {
+        echo -e "### Identifying Projects in $solution" >> "$GITHUB_STEP_SUMMARY"
+
         # Interrogate Solution
         echo "Getting list of projects from $solution"
-        projects=$(dotnet sln "$solution" list | sed -e 1,2d)
-        [[ "$projects" == "" ]] && fail "No output from solution."
-        projectsLowercase=$(echo "$projects" | tr '[:upper:]' '[:lower:]')
-        [[ "$projectsLowercase" != *".csproj" ]] && fail "No C# projects found!"
-        projectCount=$(echo "$projects" | wc -l | xargs)
-        echo "$projectCount projects found."
-
-        # shellcheck disable=2086
-        # Work around MacOS having old bash
-        if type -t readarray >/dev/null; then
-          readarray -t projectArray <<< "$projects"
+        if projects=$(dotnet sln "$solution" list | sed -e 1,2d) ; then
+          echo "Solution interrogated"
         else
-          IFS=$'\n' read -r -d projectArray < <(printf '%s\0' "$projects")
+          fail "Problem interrogating solution: $projects"
         fi
 
-        comma=""
-        projectJson="[ "
-        for project in ${projectArray[@]}; do
-            jsonLine="\"$project\","
-            if [[ "$projectJson" != *"$jsonLine"* ]]; then
-                projectJson="$projectJson$comma$jsonLine"
-                comma=", "
-            fi
+        [[ "$projects" == "" ]] && fail "No projects in solution."
+        [[ "${projects,,}" != *"$projectExtension" ]] && fail "No C# projects found!"
+        echo "Total of $(echo "$projects" | grep -c "$projectExtension") projects found."
+
+        readarray -t projectArray <<< "$projects"
+
+        # Convert to JSON
+        err="Problem converting projects to JSON: "
+        projectsJSON="$(jq --compact-output --null-input '$ARGS.positional' --args -- "${projectArray[@]}")" || fail "$err: $projectsJSON"
+        err="Problem processing JSON: "
+        testProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests$projectExtension")))') || fail "$err: $testProjectsJSON"
+        realProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests$projectExtension") | not))') || fail "$err: $realProjectsJSON"
+        testProjectCount=$(echo "$testProjectsJSON" | jq -r 'length') || fail "$err: $testProjectCount"
+        realProjectCount=$(echo "$realProjectsJSON" | jq -r 'length') || fail "$err: $realProjectCount"
+        echo "$testProjectCount test project(s) found."
+        echo "$realProjectCount prod project(s) found."
+        [[ $testProjectCount -gt 0 ]] || fail "No test projects found."
+        [[ $realProjectCount -gt 0 ]] || fail "No non-test projects found."
+
+        # Summarise
+        #shellcheck disable=SC2129
+        echo "### Projects identified" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Status | Name | Path |" >> "$GITHUB_STEP_SUMMARY"
+        echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        problem="false"
+        for project in "${projectArray[@]}" ; do
+          if [[ -f "$project" ]] ; then
+            start="| 🟢 | $(projectName "$project")"
+          else
+            start="| 🔴 | NOT FOUND"
+            problem="true"
+          fi
+          echo "$start | $project |" >> "$GITHUB_STEP_SUMMARY"
         done
-        projectJson="$projectJson ]"
-        if [[ "$projectJson" ==  "[ $(echo $projects | sed 's/ /, /g') ]" ]] ; then
-          echo "sed is less code (for us to read), so we shjould use that"
+        echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        [[ "$problem" == "true" ]] && fail "Some projects were not found."
+        #shellcheck disable=SC2129
+        echo "projectsJSON=$projectsJSON" >> "$GITHUB_OUTPUT"
+        echo "testProjectsJSON=$testProjectsJSON" >> "$GITHUB_OUTPUT"
+        echo "realProjectsJSON=$realProjectsJSON" >> "$GITHUB_OUTPUT"
+        echo "testProjectCount=$testProjectCount" >> "$GITHUB_OUTPUT"
+        echo "realProjectCount=$realProjectCount" >> "$GITHUB_OUTPUT"
+      }
+
+      function projectName {
+        local fullPath="$1" ; local ext="${1##*.}" ; local name
+        if name="$(basename "$fullPath" ".${ext}")" ; then # Remove extension and path to return the project name
+          echo "$name"
         else
-          echo =e "for loop: ${projectJson}\nsed: [ $(echo $projects | sed 's/ /, /g') ]"
+          fail "Internal Error:\n- Could not get project name from $fullPath\n- $name"
         fi
-        echo "Project = $projectJson"
-        echo "projectJson=$projectJson" >> $GITHUB_OUTPUT
-        echo "projects=$( echo "$projectJson" )" >> $GITHUB_OUTPUT
       }
 
       function fail {
         printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
-        errors="$errors\n$1" && echo "errors=$errors" >> GITHUB_OUTPUT
-        [[ "$strict" == "false" ]] && echo "Continuing" || exit "${2-1}" ## Returncode specified by $2, or 1 by default.
+        echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
+        exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
       main "$@" ; exit
 
   - name: Version.Proj Referenced
     shell: bash
     id: version-reference
+    if: ${{ steps.version-existence.outputs.projFile != '' }}
     env:
-      versionNetProj: ${{ steps.versionNet.outputs.proj }}
-      projects: ${{ fromJSON(steps.solution.outputs.projects) }}
-      projectJson: ${{ fromJSON(steps.solution.outputs.projectJson) }}
-    run: | #TODO: Remove testing code
+      versionProj: ${{ steps.version-existence.outputs.projFile }}
+      realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
+      realProjectCount: ${{ steps.solution.outputs.realProjectCount }}
+      strict: ${{ steps.values.outputs.strict }}
+      verbose: ${{ steps.values.outputs.verbose }}
+    run: |
       main() {
-        echo "Checking that Version.proj is referenced by at least one project"
-
-        # shellcheck disable=2086
-        # Work around MacOS having old bash
-        if type -t readarray >/dev/null; then
-          readarray -t projectArray <<< "$projects"
-        else
-          IFS=$'\n' read -r -d projectArray < <(printf '%s\0' "$projects")
-        fi
-
-        # testing
-        if [[ "$projects" != "$projectJson" ]] ; then 
-          echo "Hmm, the nested echo seems to do something."
-          echo "nested: $projects"
-          echo "nonest: $projectJson"
-        else
-          echo -e "No need to nest the echo on output, both produce:\n$projects"
-        fi
-
+        echo "Checking that Version.proj is referenced by production projects"
+        echo -e "### Version.Net References\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         count=0
-        for item in "${projects[@]}" ; do
-          csprojPath=(realpath "${item%/*}")
-          relativePath="$(realpath --relative-to=${item%/*} "$versionNetProj")"
-          echo "$item i.e. $csprojPath -> $relativePath"
-          if [[ $(csprojcli attributevalue.exists -p "$item" -g "ImportGroup" -n "Import" -a "Project") == "True" ]] ; then
-            echo "ImportGroup/Import/Project exists and has a value"
-            value=$(csprojcli nodevalue.get -p "$item" -g "ImportGroup" -n "Import" -a "Project")
-            echo "Project attribute has value of $value"
-            if [[ "$value" == *"$relativePath"* ]] ; then
-              count=$((count+1))
-              echo "Path to $versionNetProj from $item is $relativePath"
-              [[ -f "relativePath" ]] && echo "path=$relativePath" >> GITHUB_OUTPUT || fail "$relativePath not found"
-            else
-              fail "Path to $versionNetProj from $item is $relativePath"
-            fi
+        problemMsg="Please see the [Version.Net documentation](https://github.com/StirlingLabs/Version.Net) for how to import it."
+        for project in "${realProjects[@]}" ; do
+          relativePath="$(realpath --relative-to="$project" "$versionProj")"
+          echo "$project Version.proj -> $relativePath"
+          if [[ "$(doesProjectImport "$project")" == "true" ]] ; then
+            echo "$project imports something"
+            imports="$(getProjectImports "$project")"
+            echo "- specifically \`$imports\`"
+            i=0
+            for import in "${imports[@]}" ; do
+              if [[ "$import" -ef "$relativePath" ]] ; then # -ef compares effective paths
+                i=$((i+1))
+                echo "${i}. Reference to Version.Net found in $project"
+              fi
+            done
+            [[ "$i" -eq 0 ]] && printBad "$project" "No Version.Net references found. $problemMsg"
+            [[ "$i" -eq 1 ]] && printGood "$project" && count=$((count+1))
+            [[ "$i" -gt 1 ]] && printOkay "$project" "Too many ($i) Version.Net references found, should only be 1."
           else
-            echo "$file does not appear to reference $versionNetProj"
+            printBad "$project" "Does not import anything. $problemMsg"
           fi
         done
-        [[ "$count" -lt 1 ]] && fail "No projects reference Version.Net"
-        [[ "$count" -eq 1 ]] && echo "found=true" >> GITHUB_OUTPUT 
-        [[ "$count" -gt 1 ]] && fail "Too many projects ($count) reference Version.Net"
+        echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        if [[ "$count" -eq "$realProjectCount" ]] ; then
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "Version.Net not referenced by all projects ($count/$realProjectCount)." >&2
+          [[ "$strict" == "false" ]] && fail "Version.Net not referenced by all projects ($count/$realProjectCount)."
+        fi
+      }
+
+      function printGood {
+        [[ "$verbose" != "true" ]] && echo -e "| ✅ | $1 | |" >> "$GITHUB_STEP_SUMMARY"
+      }
+
+      function printOkay {
+        echo -e "| ⚠️ | $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"
+      }
+
+      function printBad {
+        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "| ❌ | $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"
+      }
+
+      function getProjectImports {
+        local projectFile="$1" ; local result ; local value
+        if value=$(csprojcli nodevalue.get -p "$projectFile" -g "ImportGroup" -n "Import" -a "Project") ; then
+          echo "$value"
+        else
+          fail "Internal Error:\n- Problem while looking for Imports in $(projectName "$projectFile")\n- $value"
+        fi
+      }
+
+      function doesProjectImport {
+        local projectFile="$1" ; local result ; local value
+        result="false"
+        if value="$(csprojcli -p "$projectFile" -g "ImportGroup" -n "Import" -a "Project")" ; then
+          result="${value,,}"
+        else
+          fail "Internal Error:\n- Problem while looking for Imports in $(projectName "$projectFile")\n- $value"
+        fi
+        echo "$result"
+      }
+
+      function projectName {
+        local fullPath="$1" ; local ext="${1##*.}" ; local name
+        if name="$(basename "$fullPath" ".${ext}")" ; then # Remove extension and path to return the project name
+          echo "$name"
+        else
+          fail "Internal Error:\n- Could not get project name from $fullPath\n- $name"
+        fi
       }
 
       function fail {
         printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
-        errors="$errors\n$1" && echo "errors=$errors" >> GITHUB_OUTPUT
-        [[ "$strict" == "false" ]] && echo "Continuing" || exit "${2-1}" ## Returncode specified by $2, or 1 by default.
+        echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
+        exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
       main "$@" ; exit
 
-  - name: Version.Proj Contents
-    id: version-contents
+  - name: Version.Proj Metadata
+    id: metadata
     shell: bash
-    if: steps.version-reference.outputs.found == 'true'
+    if: steps.version-reference.outputs.found == 'true' 
     env:
-      versionNetProj: ${{ steps.versionNet.outputs.proj }}
-      versionNetPath: ${{ steps.versionNet.outputs.path }}
+      versionProj: ${{ steps.version-existence.outputs.projFile }}
       homepage: ${{ inputs.homepage }}
       gitUrl: ${{ inputs.gitUrl }}
-      defaultbranch: ${{ inputs.defaultbranch }}
-      strict: ${{ inputs.strict }}
+      strict: ${{ steps.values.outputs.strict }}
+      verbose: ${{ steps.values.outputs.verbose }}
     run: |
       main() {
-        [[ -f "$versionNetProj" ]] || fail "Version.Net not found at (Proj) $versionNetProj"
-        [[ -f "$versionNetPath" ]] || fail "Version.Net not found at (Path) $versionNetPath"
-        echo "Checking for correct values in $proj"
-        testNodeValue "Authors" contains "The Stirling Labs Team" || fail "Authors can credit others but should always report that we create the NuPkg"
-        testNodeValue "Owners" contains "Stirling Labs" || fail "Owners can credit others but should always report that we own the NuPkg"
-        testNodeValue "Company" is "Stirling Labs" || fail "The company is Stirling Labs"
-        testNodeValue "RepositoryType" is "git" || fail "Repository type is git"
-        testNodeValue "RepositoryUrl" is $gitUrl || fail "Repo URL should be this repo $gitUrl"
-        testNodeValue "PackageProjectUrl" is $homepage || fail "PackageProjectUrl should be our GitHub page for the project"
-        if [[ ! node "GitDefaultBranch" is "main" ]] ; then
-          echo "Default branch should be `main`"
-          [[ testNodeValue "GitDefaultBranch" is "master" ]] | fail "Default branch should be main (or possibly master if required by upstream)"
+        echo "Checking for correct values in $versionProj"
+        echo -e "### Version.Net Metadata\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        problem=""
+        #          NodeName  TestType  TestValue      Error Message
+        printContains "Authors" "Stirling Labs Team"  "Credit others but always report that we create the NuPkg, so are at least one of the authors."
+        printContains "Owners" "Stirling Labs"        "Credit others as authors but always report that we own the NuPkg."
+        printEquality "Company" "Stirling Labs"       "The company is Stirling Labs"
+        printEquality "RepositoryType" "git"          "Is git, it's always git."
+        printEquality "RepositoryUrl" "$gitUrl"       "Should be this repo $gitUrl"
+        printEquality "PackageProjectUrl" "$homepage" "Should be our GitHub page for the project; $homepage"
+        printEquality "GitCommitsIgnoreMerges" "true" "GitCommitsIgnoreMerges should be true"
+
+        nodeGitDefaultBranchValue="$(getNodeValue "GitDefaultBranch")"
+        if [[ "$nodeGitDefaultBranchValue" == "main" ]] ; then
+          printGood "GitDefaultBranch"
+        else
+          if [[ "$nodeGitDefaultBranchValue" == "master" ]] ; then
+            printOkay "GitDefaultBranch" "Default branch should be \`main\` unless forced by an upstream repo."
+          else
+            printBad "GitDefaultBranch" "Should be \`main\` (can be \`master\` if forced by upstream repo)."
+            echo -e "Problem: GitDefaultBranch should not be \`$nodeGitDefaultBranchValue\`" >&2
+          fi
         fi
-        testNodeValue "GitCommitsIgnoreMerges" is "true" || fail "GitCommitsIgnoreMerges should be true"
+        
         for node in "PackageIcon" "PackageReadmeFile" "PackageLicenseFile" ; do
           value=$(getNodeValue "$node")
-          [[ -z "$value" ]] && fail "$node should have a value"
-          [[ -f "$value" ]] || fail "$node not found at $value"
+          if [[ -f "$value" ]] ; then
+            printGood "$node"
+          else
+            printOkay "$node" "File not found at $value as indicated. Check it's copied into place by the csproj."
+          fi
         done
+        echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        if [[ "$problem" == "true" ]] ; then
+          [[ "$strict" == "true" ]] && fail "Version.Net metadata is not correct."
+          [[ "$strict" == "false" ]] && echo "### ⚠️ Note: Version.Net metadata is not correct." >> "$GITHUB_STEP_SUMMARY"
+        fi
       }
 
-      function fail {
+      function printGood {
+        [[ "$verbose" != "true" ]] && echo -e "| ✅ | $1 | |" >> "$GITHUB_STEP_SUMMARY"
+      }
+
+      function printOkay {
+        echo -e "| ⚠️ | $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"
+      }
+
+      function printBad {
         printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
-        errors="$errors\n$1" && echo "errors=$errors" >> GITHUB_OUTPUT
-        [[ "$strict" == "false" ]] && echo "Continuing" || exit "${2-1}" ## Returncode specified by $2, or 1 by default.
+        echo -e "| ❌ | $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"
+        problem="true"
       }
 
-      function testNodeValue {
-        project="$proj" && name="$1" && test="$2" && value="$3"
-        result=$(getNodeValue "$name")
-        [[ "$result" != "" ]] || fail "$result"
-        case "$test" in
-          "is" )
-            [[ "$result" == "$value" ]] && return 0 || echo "Error: $value is $result but should be $value" >&2 ;;
-          "contains" )
-            [[ "$result" == *"$value"* ]] && return 0 || echo "Error: $value is $result but should contain $value" >&2 ;;
-          * )
-            fail "Internal problem; invalid argument $test" ;;
-        esac
-        return 1
+      function printEquality {
+        local nodeName="$1" ; local expectedValue="$2" ; local errorMessage="$3" ; local result
+        result="$(getNodeValue "$nodeName")"
+        if [[ "$(validateSingleNodeValue "$result" "$nodeName")" == "true" ]] \
+            && [[ "$result" == "$expectedValue" ]] ; then
+          printGood "$nodeName"
+        else
+          printBad "$nodeName" "$errorMessage"
+          problem="true"
+        fi
+      }
+
+      function printContains {
+        local nodeName="$1" ; local expectedValue="$2" ; local errorMessage="$3" ; local result
+        result="$(getNodeValue "$nodeName")"
+        if [[ "$(validateSingleNodeValue "$result" "$nodeName")" == "true" ]] \
+            && [[ "$result" == *"$expectedValue"* ]] ; then
+          printGood "$nodeName"
+        else
+          printBad "$nodeName" "$errorMessage"
+          problem="true"
+        fi
+      }
+
+      function nodeExists {
+        local projectFile="$versionProj" ; local nodeName="$1" ; local existence
+        if existence=$(csprojcli nodevalue.exists -p "$projectFile" -g PropertyGroup -n "$nodeName") ; then
+          echo "${existence,,}"
+        else
+          fail "Internal problem; csprojcli failed: $existence"
+        fi
       }
 
       function getNodeValue {
-        project="$proj" && nodeName="$1"
-        if [[ $(csprojcli nodevalue.exists -p "$project" -g PropertyGroup -n "$nodeName") == "True" ]] ; then
-          value=$(csprojcli nodevalue.get -p "$project" -g PropertyGroup -n "$nodeName")
-          [[ "$(wc -l <<< "$value")" -eq 1 ]] || fail "Multiple values set om $nodeName.  Should only be one value, not:\n$value."
-          echo "$value"
+        local projectFile="$versionProj" ; local nodeName="$1" ; local value
+        if [[ "$(nodeExists "$nodeName")" == "true" ]] ; then
+          if value=$(csprojcli nodevalue.get -p "$projectFile" -g PropertyGroup -n "$nodeName") ; then
+            echo "$value"
+          else
+            fail "Internal problem; csprojcli failed: $value"
+          fi
         fi
+      }
+
+      function validateSingleNodeValue {
+        local nodeValue="$1" ; local nodeName="$2" ; local result
+        result="false"
+        if [[ "$(wc -l <<< "$nodeValue")" -gt 1 ]] ; then
+          echo "Multiple values found in $nodeName, should only be one value but got $nodeValue" >&2
+          printBad "$nodeName" "Multiple values found, should only be one value."
+        else
+          result="true"
+        fi
+        echo "$result"
+      }
+
+      function fail {
+        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "### ❌ Error ❌\n$1" >> "$GITHUB_STEP_SUMMARY"
+        exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
       main "$@" ; exit
 
-  - name: Version.Proj Overrides
-    id: version-overrides
+  - name: Metadata Shadows
+    id: metadata-shadowing
     shell: bash
     if: steps.version-reference.outputs.found == 'true'
     env:
-      proj: ${{ steps.versionNet.outputs.proj }}
-      projects: ${{ steps.solution.outputs.projects }}
-      homepage: ${{ inputs.homepage }}
-      gitUrl: ${{ inputs.gitUrl }}
-      defaultbranch: ${{ inputs.defaultbranch }}
-      strict: ${{ inputs.strict }}
+      versionProj: ${{ steps.version-existence.outputs.projFile }}
+      realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
+      strict: ${{ steps.values.outputs.strict }}
+      verbose: ${{ steps.values.outputs.verbose }}
     run: |
       # Check that no csproj files override settings from Version.proj
       # This should be kept in sync with the list of properties in Version.proj
       main() {
-        # shellcheck disable=2086
-        # Work around MacOS having old bash
-        if type -t readarray >/dev/null; then
-          readarray -t projectArray <<< "$projects"
-        else
-          IFS=$'\n' read -r -d projectArray < <(printf '%s\0' "$projects")
-        fi
-        count=0
-        error="false"
-        for item in "${projectArray[@]}" ; do
+        problem="false"
+        for project in "${realProjects[@]}" ; do
           count=$((count+1))
-          echo "${count}. Checking for correct calues in $item"
-          node "Authors" "$item" || error="true"
-          node "Owners" "$item" || error="true"
-          node "Company" "$item" || error="true"
-          node "RepositoryType" "$item" || error="true"
-          node "RepositoryUrl" "$item" || error="true"
-          node "PackageProjectUrl" "$item" || error="true"
-          node "GitDefaultBranch" "$item" || error="true"
-          node "GitCommitsIgnoreMerges" "$item" || error="true"
-        done
-        [[ "$error" == "true" ]] && fail "One or more csproj files attempted to override values that should be set in $proj"
-      }
-
-      function fail {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
-        errors="$errors\n$1" && echo "errors=$errors" >> GITHUB_OUTPUT
-        [[ "$strict" == "false" ]] && echo "Continuing" || exit "${2-1}" ## Returncode specified by $2, or 1 by default.
-      }
-
-      function node {
-        nodeName="$1" && filename="$2"
-        if [[ $(csprojcli nodevalue.exists -p "$filename" -g PropertyGroup -n "$nodeName") == "True" ]] ; then
-          echo "Error: $nodeName exists in $filename"
-          return 1
-        fi
-        return 0
-      }
-      main "$@" ; exit
-
-  - name: Tests
-    id: tests
-    shell: bash
-    env:
-      solution: ${{ steps.discover.outputs.solution }}
-      projects: ${{ fromJSON(steps.solution.outputs.projects) }}
-      strict: ${{ inputs.strict }}
-    run: |
-      # Process C# projects to check if tests have GitHubActionsTestLogger configured
-      main() {
-        count=0
-        for project in "${projects[@]}" ; do
-          if [[ "$project" == *".Tests" ]] && [[ "$project" != "StirlingLabs.Tests" ]]; then
-            count=$((count+1))
-            echo "✔️ Test Project: $project"
-            echo "project=$project" >> GITHUB_OUTPUT
+          echo "${count}. Checking for metadata shadowing in $project"
+          error=""
+          for node in "Authors" "Owners" "Company" "RepositoryType" "RepositoryUrl" "PackageProjectUrl" "GitDefaultBranch" "GitCommitsIgnoreMerges" ; do
+            if [[ "$(nodeExists "$project" "$node")" == "true" ]] ; then
+              error="$error\n\t- $node"
+            fi
+          done
+          if [[ "$error" == "" ]] ; then
+            good "$project"
           else
-            echo "Not a test project: $project"
+            bad "$project attempts to override values that should only be set in $versionProj:\n$error"
+            problem="true"
           fi
         done
-        [[ "$count" -eq 0 ]] && fail "Please ensure you have a test project with a name ending `.Tests`."
-        [[ "$count" -gt 1 ]] && fail "Expected just one test project, found $count."
+        if [[ "$problem" == "true" ]] && [[ "$strict" == "true" ]] ; then
+          fail "Metadata shadowing detected.  See above for details."
+        fi
+      }
+
+      function good {
+        [[ "$verbose" != "true" ]] && echo "- ✅ $1" >> "$GITHUB_STEP_SUMMARY"
+      }
+
+      function bad {
+        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo "- ❌ $1" >> "$GITHUB_STEP_SUMMARY"
       }
 
       function fail {
         printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
-        errors="$errors\n$1" && echo "errors=$errors" >> GITHUB_OUTPUT
-        [[ "$strict" == "false" ]] && echo "Continuing" || exit "${2-1}" ## Returncode specified by $2, or 1 by default.
+        echo -e "### ❌ Error ❌\n$1" >> "$GITHUB_STEP_SUMMARY"
+        exit "${2-1}" ## Exit code specified by $2, or 1 by default.
+      }
+
+      function nodeExists {
+        local nodeName="$2" ; local filename="$1" ; local result ; local existence
+        result="false"
+        if existence=$(csprojcli nodevalue.exists -p "$filename" -g PropertyGroup -n "$nodeName") ; then
+          [[ "$existence" == "True" ]] && result="true"
+        else
+          fail "Internal Error\nProblem checking for $nodeName in $filename\n$existence"
+        fi
+        echo "$result"
       }
       main "$@" ; exit
 
@@ -405,76 +533,102 @@ runs:
     id: logging
     shell: bash
     env:
-      testProject: ${{ steps.tests.outputs.project }}
-      projects: ${{ fromJSON(steps.solution.outputs.projects) }}
-      strict: ${{ inputs.strict }}
-    run: |
-      # Process C# projects to check if tests have GitHubActionsTestLogger configured
+      projectExtension: ${{ steps.values.outputs.projectExtension }}
+      testProjects: ${{ fromJSON(steps.solution.outputs.testProjectsJson) }}
+      realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJson) }}
+      strict: ${{ steps.values.outputs.strict }}
+      verbose: ${{ steps.values.outputs.verbose }}
+    run: | 
       main() {
-        # All Test projects should have GitHubActionsTestLogger
-        package="GitHubActionsTestLogger"
-        if [[ packageReference "$testProject" "$package" ]] ; then
-          echo "✔️ $package found."
-          echo "gitHubActions=true" >> GITHUB_OUTPUT
-        else
-          msg="Please ensure that any testing projects have `$package` enabled and up-to-date."
-          msg="$msg\nTo install:\n```shell\n> dotnet add \"${project}\" package $package\n```\n"
-          fail "$package not found in ${item}.\n$msg"
-        fi
+        failure="false" ; inProject=""
+        for project in "${testProjects[@]}" ; do
+          inProject="in $(projectName "$project")"
+          echo "Test project: $project"
 
-        # All Test projects should have coverlet
-        package="collections.collector"
-        if [[ packageReference "$testProject" "$package" ]] ; then
-          echo "✔️ $package found."
-          echo "coverlet=true" >> GITHUB_OUTPUT
-        else
-          msg="Please ensure that any testing projects have `$package` enabled and up-to-date."
-          msg="$msg\nTo install:\n```shell\n> dotnet add \"${project}\" package $package\n```\n"
-          fail "$package not found in ${item}.\n$msg"
-        fi
+          # All test projects should have GitHubActionsTestLogger & coverlet.collector
+          problem="false" ; msg=""
+          for package in "GitHubActionsTestLogger" "coverlet.collector" ; do
+            if [[ "$(packageReference "$project" "$package")" != "true" ]] ; then
+              problem="true"
+              msg="$msg\n\`\`\`shell\n> dotnet add \"${project}\" package $package\n\`\`\`"
+              bad "$package not found" "$inProject" "$msg"
+            fi
+          done
+          if [[ "$problem" == "false" ]] ; then
+            good "Required logging packages found" "$inProject"
+          else
+            bad "Required logging packages not found" "$inProject" "To install:\n$msg"
+            [[ "$strict" == "true" ]] && failure="true"
+          fi
 
-        # No Test projects should have coverlet.msbuild
-        package="coverlet.msbuild"
-        if [[ packageReference "$testProject" "$package" ]] ; then
-          msg="There are [known issues]"
-          msg="$msg(https://github.com/coverlet-coverage/coverlet/blob/master/Documentation/KnownIssues.md#1-vstest-stops-process-execution-earlydotnet-test)"
-          msg="$msg with this package, please remove it."
-          echo "$package found.  There are known issues with this package, please remove it."
-          echo "msbuildCoverlet=true" >> GITHUB_OUTPUT
-          errors="$errors\n$msg" && echo "errors=$errors" >> GITHUB_OUTPUT
-        else
-          echo "✔️ $package not found."
-          echo "msbuildCoverlet=false" >> GITHUB_OUTPUT
-        fi
-
-        # Only Test projects should have test logging
-        for project in "${projects[@]}" ; do
-          if [[ "$project" == "$testProject" ]] ; then
-            for package in "coverlet.collector" "coverlet.msbuild" "GitHubActionsTestLogger" ; do
-              if [[ ! packageReference "$project" "$package" ]] ; then
-                fail "$package found in $project, but should only be in ${testProject}, please remove it."
-              fi
-            done
+          # Test projects should NOT have coverlet.msbuild
+          package="coverlet.msbuild"
+          if [[ "$(packageReference "$project" "$package")" == "true" ]] ; then
+            msg="There are [known issues](https://github.com/coverlet-coverage/coverlet/blob/master/Documentation/KnownIssues.md#1-vstest-stops-process-execution-earlydotnet-test)"
+            msg="$msg with this package, please remove it to avoid problems with the build process."
+            bad "$package found" "$inProject" "$msg"
+            failure="true"
+          else
+            good "$package not found" "$inProject"
           fi
         done
+
+        # Production projects should NOT have test logging
+        problem="false"
+        for project in "${realProjects[@]}" ; do
+          inProject="in $(projectName "$project")"
+          for package in "coverlet.collector" "coverlet.msbuild" "GitHubActionsTestLogger" ; do
+            if [[ "$(packageReferenceIsValue "$project" "$package")" == "true" ]] ; then
+              problem="true"
+              bad "$package found in production project" "$inProject" "$package should only be used in test projects."
+            fi
+          done
+        done
+        if [[ "$problem" == "false" ]] ; then
+          good "Test logging packages not found" "$inProject"
+        else
+          [[ "$strict" == "true" ]] && failure="true"
+        fi
+
+        [[ "$failure" == "true" ]] && fail "One or more serious problems found with logging."
+      }
+
+      function good {
+        echo -e "$1 $2"
+        [[ "$verbose" != "true" ]] && echo -e "- ✅ $1 $2" >> "$GITHUB_STEP_SUMMARY"
+      }
+
+      function bad {
+        echo -e "❌ $1 $2 ❌\n$3" >&2
+        echo -e "- ❌ $1 $2" >> "$GITHUB_STEP_SUMMARY"
       }
 
       function fail {
         printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
-        errors="$errors\n$1" && echo "errors=$errors" >> GITHUB_OUTPUT
-        [[ "$strict" == "false" ]] && echo "Continuing" || exit "${2-1}" ## Returncode specified by $2, or 1 by default.
+        echo -e "### ❌ Error ❌\n- $1" >> "$GITHUB_STEP_SUMMARY"
+        exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
 
-      function packageReference {
-        [[ -f $1.csproj ]] file="$1.csproj" || echo "Could not find $1.csproj"
-        [[ -f $1/$1.csproj ]] file="$1/$1.csproj" || echo "Could not find $1/$1.csproj"
-        [[ "$file" == "" ]] && fail "Could not find a file for $1"
-        packagename="$2"
-        if [[ $(csprojcli attributevalue.exists -p "$file" -g "ItemGroup" -n "PackageReference" -a "Include" -v "$packageName") == "True" ]] ; then
-          echo "$packageName found in $file." >&2
+      function projectName {
+        local fullPath="$1" ; local ext="${1##*.}" ; local name
+        if name="$(basename "$fullPath" ".${ext}")" ; then # Remove extension and path to return the project name
+          echo "$name"
         else
-          return 1
+          fail "Internal Error:\n- Could not get project name from $fullPath\n- $name"
         fi
+      }
+
+      function packageReferenceIsValue {
+        local projectFile="$1" ; local value="$2" ; local result ; local valueExists
+        result="false"
+        if valueExists=$(csprojcli attributevalue.exists -p "$projectFile" -g "ItemGroup" -n "PackageReference" -a "Include" -v "$value") ; then
+          if [[ "$valueExists" == "True" ]] ; then
+            result="true"
+          fi
+        else
+          echo "$value not found as PackageReference in $projectFile." >&2
+        fi
+        return "$result"
       }
       main "$@" ; exit
 
@@ -482,83 +636,116 @@ runs:
     id: build
     shell: bash
     env:
-      solution: ${{ steps.discover.outputs.solution }}
-      projects: ${{ fromJSON(steps.solution.outputs.projects) }}
-      testProject: ${{ steps.tests.outputs.project }}
+      testProjects: ${{ fromJSON(steps.solution.outputs.testProjectsJSON) }}
+      realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
       packageOutputPath: ${{ steps.values.outputs.packageOutputPath }}
-    run: |
+      isLibrary: ${{ inputs.library }}
+      strict: ${{ steps.values.outputs.strict }}
+      verbose: ${{ steps.values.outputs.verbose }}
+    run: | #TODO: rework failure mode
       # Process C# projects to ensure PackageOutputPath & GeneratePackageOnBuild is set correctly
       main() {
-        count=0
-        for project in "${projects[@]}" ; do
-          [[ "$project" == "$testProject" ]] && continue
+        count=0 ; isLibrary="${isLibrary,,}" ; error=false
+        for project in "${realProjects[@]}" ; do
           count=$((count+1))
           echo "$count. $project"
-          result=$(checkNodeValue "$project" "PackageOutputPath" "$packageOutputPath")
-          [[ "$result" == "" ]] || fail "$result"
-          result=$(checkNodeValue "$project" "GeneratePackageOnBuild" "true")
-          [[ "$result" == "" ]] || echo -e "$result" && errors="$errors\n$result" && echo "errors=$errors" >> GITHUB_OUTPUT
+          echo -e "### $(projectName "$project")\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
+          # PackageOutputPath
+          package="PackageOutputPath"
+          if [[ $(nodeHasValue "$project" "$package" "$packageOutputPath") == "true" ]] ; then
+            good "$package" "$packageOutputPath"
+          else
+            msg="\`$package\` should be set to \`$packageOutputPath\`."
+            detail="To do this, add the following excerpt to $project:\n$(propertyGroupExcerpt "$package" "$packageOutputPath")"
+            bad "$package" "$msg" "$detail"
+          fi
+
+          # GeneratePackageOnBuild
+          package="GeneratePackageOnBuild"
+          msg="Lbrary projects have \`$package\` set to \`$isLibrary\`, while executable projects should not have it set, or set it to false."
+          detail="To set:\n\`\`\`xml\n<PropertyGroup>\n  <$package>$isLibrary</$package>\n</PropertyGroup>\n\`\`\`\n"
+          if [[ $(nodeExists "$project" "$package") == "true" ]] ; then
+            if [[ $(nodeHasValue "$project" "$package" "$isLibrary") == "true" ]] ; then
+              good "$package" "$isLibrary"
+            else
+              bad "$package" "$msg" "$detail"
+            fi
+          else
+            if [[ "$isLibrary" == "false" ]] ; then
+              good "$package" "Not assigned"
+            else
+              bad "$package" "$msg" "$detail"
+            fi
+          fi
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         done
+        [[ "$strict" == "true" ]] && [[ "$error" == "true" ]] && echo "## Errors occurred, view log for details." >> "$GITHUB_STEP_SUMMARY" && exit 1
+      }
+
+      function good {
+        [[ "$verbose" != "true" ]] && echo -e "| ✅ | $1 | |" >> "$GITHUB_STEP_SUMMARY"
+      }
+
+      function bad {
+        local emoji ;
+        [[ "$strict" == "false" ]] && emoji="⚠️" || emoji="❌"
+        echo "| $emoji | $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"
+        echo -e "$emoji $2 $3" >> GITHUB_OUTPUT
+        error="true"
+      }
+
+      function projectName {
+        local fullPath="$1" ; local ext="${1##*.}" ; local name
+        if name="$(basename "$fullPath" ".${ext}")" ; then # Remove extension and path to return the project name
+          echo "$name"
+        else
+          fail "Internal Error:\n- Could not get project name from $fullPath\n- $name"
+        fi
+      }
+
+      function propertyGroupExcerpt {
+        local node="$1" ; local value="$2"
+        #shellcheck disable=SC2028
+        echo "\`\`\`xml\n<PropertyGroup>\n\t<${node}>$value</${node}>\n</PropertyGroup>\n\`\`\`"
+      }
+
+      function nodeHasValue {
+        local projectFile="$1" ; local nodeName="$2" ; local value="$3" ; local result ; local nodeValue
+        result="false"
+        if [[ "$(nodeExists "$projectFile" "$nodeName")" == "true" ]] ; then
+          if nodeValue="$(csprojcli nodevalue.get -p "$projectFile" -g "PropertyGroup" -n "$nodeName")" ; then
+            if [[ "$nodeValue" == "$value" ]] ; then
+              result="true"
+            else
+              echo "Node $nodeName in $projectFile does not have the expected value $value but is $nodeValue." >&2
+            fi
+          else
+            fail "Getting value of Node $nodeName in $projectFile and encountered an error:\n$nodeValue"
+          fi
+        fi
+        echo "$result"
+      }
+
+      function nodeExists {
+        local projectFile="$1" ; local nodeName="$2" ; local result ; local existence
+        result="false"
+        if existence="$(csprojcli node.exists -p "$projectFile" -g "PropertyGroup" -n "$nodeName")" ; then
+          if [[ "$existence" == "True" ]] ; then
+            result="true"
+          else
+            echo "Node $nodeName does not exist in $projectFile." >&2
+          fi
+          echo "$result"
+        else
+          fail "Internal error\nTesting if Node $nodeName exists in $projectFile and encountered an error:\n$existence"
+        fi
       }
 
       function fail {
         printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
-        errors="$errors\n$1" && echo "errors=$errors" >> GITHUB_OUTPUT
-        [[ "$strict" == "false" ]] && echo "Continuing" || exit "${2-1}" ## Returncode specified by $2, or 1 by default.
+        echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
+        exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
 
-      function checkNodeValue {
-        project="$1" ; name="$2" ; value="$3"
-        if [[ $(csprojcli node.exists -p "$project" -g "PropertyGroup" -n "$name") == "True" ]] ; then
-          if [[ $(csprojcli nodevalue.get -p "$project" -g "PropertyGroup" -n "$name") == "$value" ]] ; then
-            echo "node$name=true" >> GITHUB_OUTPUT
-            return 0
-          fi
-        fi
-        msg="To set this value, in a `<PropertyGroup>` create the line:\n\t\t`<$name>$value</$name>`"
-        msg="Node $name is not set to $value in $project.\n$msg"
-        errors="$errors\n$msg" && echo "errors=$errors" >> GITHUB_OUTPUT
-        echo "node$name=false" >> GITHUB_OUTPUT
-        return $problem
-      }
       main "$@" ; exit
-
-  - name: Summary
-    id: summary
-    env:
-      release: ${{ inputs.release }}
-      version: ${{ needs.version.outputs.text }}
-      project: ${{ needs.name.outputs.project }}
-      event: ${{ github.event_name }}
-      solutionErrors: ${{ steps.solution.outputs.errors }}
-      versionNetReferenceErrors: ${{ steps.version-reference.outputs.errors }}
-      versionNetContentErrors: ${{ steps.version-content.outputs.errors }}
-      versionNetOverrideErrors: ${{ steps.version-override.outputs.errors }}
-      testsErrors: ${{ steps.tests.outputs.errors }}
-      loggingErrors: ${{ steps.logging.outputs.errors }}
-      buildErrors: ${{ steps.build.outputs.errors }}
-    run: |
-      [[ "$release" == "true" ]] && headline="Ready for release" || headline="Built & tested"
-      # shellcheck disable=2086,2129
-      echo "### $headline on $RUNNER_OS" >> $GITHUB_STEP_SUMMARY
-      # shellcheck disable=2086
-      echo "- Project built sucessfully" >> $GITHUB_STEP_SUMMARY
-      # shellcheck disable=2086
-      echo "- Unit tests completed sucessfully" >> $GITHUB_STEP_SUMMARY
-      # shellcheck disable=2086
-      [[ "$release" == "true" ]] && echo "- NuPkgs were tested successfully" >> $GITHUB_STEP_SUMMARY
-      if [[ "$event" == "pull_request" ]] ; then
-        # shellcheck disable=2086
-        echo "- Test coverage was updated in the PR" >> $GITHUB_STEP_SUMMARY
-      elif [[ "$event" == "push" ]] ; then
-        # shellcheck disable=2086
-        echo "- Test coverage was recorded in the \`storage\` branch" >> $GITHUB_STEP_SUMMARY
-      fi
-      [[ "$solutionErrors" == "" ]] || echo "- $solutionErrors" >> $GITHUB_STEP_SUMMARY
-      [[ "$versionNetReferenceErrors" == "" ]] || echo "- $versionNetReferenceErrors" >> $GITHUB_STEP_SUMMARY
-      [[ "$versionNetContentErrors" == "" ]] || echo "- $versionNetContentErrors" >> $GITHUB_STEP_SUMMARY
-      [[ "$versionNetOverrideErrors" == "" ]] || echo "- $versionNetOverrideErrors" >> $GITHUB_STEP_SUMMARY
-      [[ "$testsErrors" == "" ]] || echo "- $testsErrors" >> $GITHUB_STEP_SUMMARY
-      [[ "$loggingErrors" == "" ]] || echo "- $loggingErrors" >> $GITHUB_STEP_SUMMARY
-      [[ "$buildErrors" == "" ]] || echo "- $buildErrors" >> $GITHUB_STEP_SUMMARY
-      exit
