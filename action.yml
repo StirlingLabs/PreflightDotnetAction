@@ -24,31 +24,12 @@ runs:
   using: 'composite'
   steps:
   - name: Debugging
-    if: true
+    if: false
     shell: bash
     env:
       GITHUB_CONTEXT: ${{ toJSON(github) }}
-      fromJsonTrue: ${{ fromJSON('true') }}
-      fromJsonFalse: ${{ fromJSON('false') }}
-      fromTextTrue: True
-      fromTextFalse: False
-      fromTextTrueLowercase: true
-      fromTextFalseLowercase: false
-      fromInputBoolean: ${{ inputs.strict }}
     run: |
       main() {
-        [[ $fromJsonTrue ]] && echo "true - fromJsonTrue=$fromJsonTrue" || echo "false - fromJsonTrue=$fromJsonTrue"
-        [[ $fromJsonFalse ]] && echo "true - fromJsonFalse=$fromJsonFalse" || echo "false - fromJsonFalse=$fromJsonFalse"
-        [[ $fromTextTrue ]] && echo "true - fromTextTrue=$fromTextTrue" || echo "false - fromTextTrue=$fromTextTrue"
-        [[ $fromTextFalse ]] && echo "true - fromTextFalse=$fromTextFalse" || echo "false - fromTextFalse=$fromTextFalse"
-        [[ "$fromJsonTrue" == "true" ]] && echo "fromJsonTrue is true" || echo "fromJsonTrue is false"
-        [[ "$fromJsonFalse" == "true" ]] && echo "fromJsonFalse is true" || echo "fromJsonFalse is false"
-        [[ "$fromTextTrue" == "true" ]] && echo "fromTextTrue is true" || echo "fromTextTrue is false"
-        [[ "$fromTextFalse" == "true" ]] && echo "fromTextFalse is true" || echo "fromTextFalse is false"
-        [[ "$fromTextTrueLowercase" == "true" ]] && echo "fromTextTrueLowercase is true" || echo "fromTextTrueLowercase is false"
-        [[ "$fromTextFalseLowercase" == "true" ]] && echo "fromTextFalseLowercase is true" || echo "fromTextFalseLowercase is false"
-        [[ "$fromInputBoolean" == "true" ]] && echo "fromInputBoolean is true" || echo "fromInputBoolean is false"
-        echo -e "fromJsonTrue=$fromJsonTrue\nfromJsonFalse=$fromJsonFalse\nfromTextTrue=$fromTextTrue\nfromTextFalse=$fromTextFalse\nfromTextTrueLowercase=$fromTextTrueLowercase\nfromTextFalseLowercase=$fromTextFalseLowercase\nfromInputBoolean=$fromInputBoolean"
         echo -e "\n$GITHUB_CONTEXT"
       }
       main "$@" ; exit
