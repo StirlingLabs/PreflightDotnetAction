@@ -83,8 +83,8 @@ runs:
       }
       main "$@" ; exit
 
-  - name: Version.Net Existance
-    id: version_existance
+  - name: Version.Net Existence
+    id: version_existence
     shell: bash
     env:
       filename: Version.proj
@@ -193,7 +193,7 @@ runs:
 
         # Summarise
         #shellcheck disable=SC2129
-        echo "### Projects identified" >> "$GITHUB_STEP_SUMMARY"
+        echo "### Projects\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         echo "| Status | Name | Path |" >> "$GITHUB_STEP_SUMMARY"
         problem="false"
         for project in "${projectArray[@]}" ; do
