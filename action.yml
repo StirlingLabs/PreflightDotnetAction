@@ -241,7 +241,7 @@ runs:
     shell: bash
     env:
       versionProj: ${{ steps.version_existence.outputs.proj_file }}
-      prodProjects: ${{ fromJSON(steps.solution.outputs.prod_projects_json) }}
+      prodProjects: ${{ steps.solution.outputs.prod_projects_json }}
       prodProjectCount: ${{ steps.solution.outputs.prod_project_count }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
@@ -249,6 +249,9 @@ runs:
       main() {
         echo "Checking that Version.proj is referenced by production projects"
         echo -e "### Version.Net References\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        echo "prodProjects=$prodProjects"
+        prodProjects="$(echo "$prodProjects" | jq -r '.[]')"
+        echo "prodProjects=$prodProjects"
         count=0
         problemMsg="Please see the [Version.Net documentation](https://github.com/StirlingLabs/Version.Net) for how to import it."
         for project in "${prodProjects[@]}" ; do
