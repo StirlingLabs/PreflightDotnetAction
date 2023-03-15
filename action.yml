@@ -126,16 +126,23 @@ runs:
       verbose: ${{ steps.values.outputs.verbose }}
     run: |
       main() {
+        echo "Installing tools"
+        install_csprojcli
+        echo "✅ Tools installed" >> "$GITHUB_STEP_SUMMARY"
+      }
+
+      function install_csprojcli {
+        echo "Installing csprojcli"
         # Install csprojcli -- which unfortunately cannot be done in a dir with multiple projects below it
         [[ -f "$emptyDir" ]] && fail "There is a file called $emptyDir please remove it!!"
         mkdir -p "$emptyDir" || fail "Could not create $emptyDir"
         cd "$emptyDir" || fail "Could not change into $emptyDir"
-        dotnet tool install -g csprojcli fail "Problem installing csprojcli."
+        dotnet tool install -g csprojcli || fail "Problem installing csprojcli."
         cd ..
         rmdir "$emptyDir" || fail "Could not remove $emptyDir"
         if csprojcli="$(which csprojcli)" ; then
           echo "csprojcli installed in $csprojcli"
-          echo "✅ csprojcli installed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- ✅ csprojcli installed" >> "$GITHUB_STEP_SUMMARY"
         fi
       }
 
@@ -144,6 +151,7 @@ runs:
         echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
         exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
+
       main "$@" ; exit
 
   - name: Interrogate Solution
