@@ -7,6 +7,10 @@ inputs:
     description: Is this project a library or executable?
     type: boolean
     default: true
+  homepage:
+    description: Homepage URL
+    type: string
+    required: false
   strict:
     description: Strict adherence to requirements
     type: boolean
@@ -102,7 +106,7 @@ runs:
 
         echo "Checking for Version.Net project file"
         if [[ -f "$filename" ]] ; then
-          echo "projFile=$(realpath "$filename")" >> "$GITHUB_OUTPUT"
+          echo "proj_file=$(realpath "$filename")" >> "$GITHUB_OUTPUT"
           echo "✅ found Version.Net" >> "$GITHUB_STEP_SUMMARY"
         else
           msg="Please create $filename as per [readme](https://github.com/StirlingLabs/Version.Net#how-do-i-install-it)"
@@ -232,10 +236,10 @@ runs:
 
   - name: Version.Proj Referenced
     id: v_reference
-    if: steps.v_existence.outputs.projFile != ''
+    if: steps.v_existence.outputs.proj_file != ''
     shell: bash
     env:
-      versionProj: ${{ steps.v_existence.outputs.projFile }}
+      versionProj: ${{ steps.v_existence.outputs.proj_file }}
       realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
       realProjectCount: ${{ steps.solution.outputs.realProjectCount }}
       strict: ${{ steps.values.outputs.strict }}
@@ -329,7 +333,7 @@ runs:
     shell: bash
     if: steps.v_reference.outputs.found == 'true' 
     env:
-      versionProj: ${{ steps.v_existence.outputs.projFile }}
+      versionProj: ${{ steps.v_existence.outputs.proj_file }}
       homepage: ${{ inputs.homepage }}
       gitUrl: ${{ inputs.gitUrl }}
       strict: ${{ steps.values.outputs.strict }}
@@ -456,7 +460,7 @@ runs:
     shell: bash
     if: steps.v_reference.outputs.found == 'true'
     env:
-      versionProj: ${{ steps.v_existence.outputs.projFile }}
+      versionProj: ${{ steps.v_existence.outputs.proj_file }}
       realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
