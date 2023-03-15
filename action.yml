@@ -181,14 +181,16 @@ runs:
         err="Problem converting projects to JSON: "
         projectsJSON="$(jq --compact-output --null-input '$ARGS.positional' --args -- "${projectArray[@]}")" || fail "$err: $projectsJSON"
         err="Problem processing JSON: "
+        echo "Using project extension: \`$projectExtension\`"
         testProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests$projectExtension")))') || fail "$err: $testProjectsJSON"
         realProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests$projectExtension") | not))') || fail "$err: $realProjectsJSON"
         testProjectCount=$(echo "$testProjectsJSON" | jq -r 'length') || fail "$err: $testProjectCount"
         realProjectCount=$(echo "$realProjectsJSON" | jq -r 'length') || fail "$err: $realProjectCount"
         echo "$testProjectCount test project(s) found."
         echo "$realProjectCount prod project(s) found."
-        [[ $testProjectCount -gt 0 ]] || fail "$testProjectCount test projects found.\n- Projects \`$projects\`\n- Test Projects (JSON) \`$testProjectsJSON\`\n- Prod Projects (JSON) \`$realProjectsJSON\`"
-        [[ $realProjectCount -gt 0 ]] || fail "$realProjectCount prod projects found.\n- Projects \`$projects\`\n- Prod Projects (JSON) \`$realProjectsJSON\`\n- Test Projects (JSON) \`$testProjectsJSON\`"
+        err="Test projects should be named with the suffix \`.Tests\`"
+        [[ $testProjectCount -gt 0 ]] || fail "$testProjectCount test projects found:\n- $err\n- Projects \`$projects\`"
+        [[ $realProjectCount -gt 0 ]] || fail "$realProjectCount prod projects found:\n- $err\n- Projects \`$projects\`"
 
         # Summarise
         #shellcheck disable=SC2129
