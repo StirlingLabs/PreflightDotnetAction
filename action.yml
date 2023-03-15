@@ -49,8 +49,8 @@ runs:
       verbose: ${{ inputs.verbose }}
     run: |
       main() {
-        echo "packageOutputPath=$packageOutputPath" >> "$GITHUB_OUTPUT"
-        echo "projectExtension=$projectExtension" >> "$GITHUB_OUTPUT"
+        echo "package_output_path=$packageOutputPath" >> "$GITHUB_OUTPUT"
+        echo "project_extension=$projectExtension" >> "$GITHUB_OUTPUT"
 
         # Find Solution
         echo "Finding solution, initially set to: \'$solution\'"
@@ -88,7 +88,7 @@ runs:
       main "$@" ; exit
 
   - name: Version.Net Existence
-    id: v_existence
+    id: version_existence
     shell: bash
     env:
       filename: Version.proj
@@ -186,19 +186,19 @@ runs:
         projectsJSON="$(jq --compact-output --null-input '$ARGS.positional' --args -- "${projectArray[@]}")" || fail "$err: $projectsJSON"
         err="Problem processing JSON: "
         testProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests.csproj")))') || fail "$err: $testProjectsJSON"
-        realProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests.csproj") | not))') || fail "$err: $realProjectsJSON"
+        prodProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests.csproj") | not))') || fail "$err: $prodProjectsJSON"
         testProjectCount=$(echo "$testProjectsJSON" | jq -r 'length') || fail "$err: $testProjectCount"
-        realProjectCount=$(echo "$realProjectsJSON" | jq -r 'length') || fail "$err: $realProjectCount"
+        prodProjectCount=$(echo "$prodProjectsJSON" | jq -r 'length') || fail "$err: $prodProjectCount"
         echo "$testProjectCount test project(s) found."
-        echo "$realProjectCount prod project(s) found."
+        echo "$prodProjectCount prod project(s) found."
         err="Test projects should be named with the suffix \`.Tests\`"
         [[ $testProjectCount -gt 0 ]] || fail "$testProjectCount test projects found:\n- $err\n- Projects \`$projects\`"
-        [[ $realProjectCount -gt 0 ]] || fail "$realProjectCount prod projects found:\n- $err\n- Projects \`$projects\`"
+        [[ $prodProjectCount -gt 0 ]] || fail "$prodProjectCount prod projects found:\n- $err\n- Projects \`$projects\`"
 
         # Summarise
         #shellcheck disable=SC2129
-        echo "### Projects" >> "$GITHUB_STEP_SUMMARY"
-        echo "| Status | Name | Path |\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        echo -e "### Projects Detected:\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Status | Name | Path |" >> "$GITHUB_STEP_SUMMARY"
         problem="false"
         for project in "${projectArray[@]}" ; do
           if [[ -f "$project" ]] ; then
@@ -211,11 +211,11 @@ runs:
         done
         [[ "$problem" == "true" ]] && fail "Some projects were not found."
         #shellcheck disable=SC2129
-        echo "projectsJSON=$projectsJSON" >> "$GITHUB_OUTPUT"
-        echo "testProjectsJSON=$testProjectsJSON" >> "$GITHUB_OUTPUT"
-        echo "realProjectsJSON=$realProjectsJSON" >> "$GITHUB_OUTPUT"
-        echo "testProjectCount=$testProjectCount" >> "$GITHUB_OUTPUT"
-        echo "realProjectCount=$realProjectCount" >> "$GITHUB_OUTPUT"
+        echo "projects_json=$projectsJSON" >> "$GITHUB_OUTPUT"
+        echo "test_projects_json=$testProjectsJSON" >> "$GITHUB_OUTPUT"
+        echo "prod_projects_json=$realProjectsJSON" >> "$GITHUB_OUTPUT"
+        echo "test_roject_count=$testProjectCount" >> "$GITHUB_OUTPUT"
+        echo "prod_project_count=$realProjectCount" >> "$GITHUB_OUTPUT"
       }
 
       function projectName {
@@ -235,13 +235,13 @@ runs:
       main "$@" ; exit
 
   - name: Version.Proj Referenced
-    id: v_reference
-    if: steps.v_existence.outputs.proj_file != ''
+    id: version_reference
+    if: steps.version_existence.outputs.proj_file != ''
     shell: bash
     env:
-      versionProj: ${{ steps.v_existence.outputs.proj_file }}
-      realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
-      realProjectCount: ${{ steps.solution.outputs.realProjectCount }}
+      versionProj: ${{ steps.version_existence.outputs.proj_file }}
+      prodProjects: ${{ fromJSON(steps.solution.outputs.prod_projects_json) }}
+      prodProjectCount: ${{ steps.solution.outputs.prod_project_count }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
     run: |
@@ -250,7 +250,7 @@ runs:
         echo -e "### Version.Net References\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         count=0
         problemMsg="Please see the [Version.Net documentation](https://github.com/StirlingLabs/Version.Net) for how to import it."
-        for project in "${realProjects[@]}" ; do
+        for project in "${prodProjects[@]}" ; do
           relativePath="$(realpath --relative-to="$project" "$versionProj")"
           echo "$project Version.proj -> $relativePath"
           if [[ "$(doesProjectImport "$project")" == "true" ]] ; then
@@ -271,10 +271,10 @@ runs:
             printBad "$project" "Does not import anything. $problemMsg"
           fi
         done
-        if [[ "$count" -eq "$realProjectCount" ]] ; then
+        if [[ "$count" -eq "$prodProjectCount" ]] ; then
           echo "found=true" >> "$GITHUB_OUTPUT"
         else
-          echo "Version.Net not referenced by all projects ($count/$realProjectCount)." >&2
+          echo "Version.Net not referenced by all projects ($count/$prodProjectCount)." >&2
           [[ "$strict" == "false" ]] && fail "Version.Net not referenced by all projects ($count/$realProjectCount)."
         fi
       }
@@ -331,11 +331,11 @@ runs:
   - name: Version.Proj Metadata
     id: metadata
     shell: bash
-    if: steps.v_reference.outputs.found == 'true' 
+    if: steps.version_reference.outputs.found == 'true' 
     env:
-      versionProj: ${{ steps.v_existence.outputs.proj_file }}
+      versionProj: ${{ steps.version_existence.outputs.proj_file }}
       homepage: ${{ inputs.homepage }}
-      gitUrl: ${{ inputs.gitUrl }}
+      gitUrl: ${{ inputs.git_url }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
     run: |
@@ -458,10 +458,10 @@ runs:
   - name: Metadata Shadows
     id: metadata-shadowing
     shell: bash
-    if: steps.v_reference.outputs.found == 'true'
+    if: steps.version_reference.outputs.found == 'true'
     env:
-      versionProj: ${{ steps.v_existence.outputs.proj_file }}
-      realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
+      versionProj: ${{ steps.version_existence.outputs.proj_file }}
+      prodProjects: ${{ fromJSON(steps.solution.outputs.prod_projects_json) }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
     run: |
@@ -469,7 +469,7 @@ runs:
       # This should be kept in sync with the list of properties in Version.proj
       main() {
         problem="false"
-        for project in "${realProjects[@]}" ; do
+        for project in "${prodProjects[@]}" ; do
           count=$((count+1))
           echo "${count}. Checking for metadata shadowing in $project"
           error=""
@@ -521,9 +521,9 @@ runs:
     id: logging
     shell: bash
     env:
-      projectExtension: ${{ steps.values.outputs.projectExtension }}
-      testProjects: ${{ fromJSON(steps.solution.outputs.testProjectsJson) }}
-      realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJson) }}
+      projectExtension: ${{ steps.values.outputs.project_extension }}
+      testProjects: ${{ fromJSON(steps.solution.outputs.test_projects_json) }}
+      realProjects: ${{ fromJSON(steps.solution.outputs.prod_projects_json) }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
     run: | 
@@ -624,9 +624,9 @@ runs:
     id: build
     shell: bash
     env:
-      testProjects: ${{ fromJSON(steps.solution.outputs.testProjectsJSON) }}
-      realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
-      packageOutputPath: ${{ steps.values.outputs.packageOutputPath }}
+      testProjects: ${{ fromJSON(steps.solution.outputs.test_projects_json) }}
+      realProjects: ${{ fromJSON(steps.solution.outputs.real_rojects_json) }}
+      packageOutputPath: ${{ steps.values.outputs.package_output_path }}
       isLibrary: ${{ inputs.library }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
