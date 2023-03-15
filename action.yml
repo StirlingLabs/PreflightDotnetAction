@@ -28,6 +28,7 @@ runs:
   using: 'composite'
   steps:
   - name: Debugging
+    id: debug
     if: false
     shell: bash
     env:
@@ -53,7 +54,7 @@ runs:
         echo "project_extension=$projectExtension" >> "$GITHUB_OUTPUT"
 
         # Find Solution
-        echo "Finding solution, initially set to: \'$solution\'"
+        echo -e "Finding solution, initially set to: \'$solution\'"
         if [[ ! -f "$solution" ]] ; then
           [[ "$solution" != *".sln" ]] && solution="${solution}.sln"
           if [[ ! -f "$solution" ]] ; then
@@ -81,10 +82,100 @@ runs:
       }
 
       function fail {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "‼️ Error: $1" >&2 ## Send message to stderr.
         echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
         exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
+      main "$@" ; exit
+
+  - name: Repo
+    id: repo
+    shell: bash
+    env:
+      context: ${{ toJSON(github) }}
+      refType: ${{ github.ref_type }}
+      refName: ${{ github.ref_name }}
+      gitUrl: ${{ github.repositoryUrl }}
+      gitCommit: ${{ github.sha }}
+      ref: ${{ github.ref }}
+      strict: ${{ steps.values.outputs.strict }}
+      verbose: ${{ steps.values.outputs.verbose }}
+    run: |
+      main() {
+        echo "Checking repo metadata..."
+        header="" ; problems=""
+        [[ "$verbose" == "true" ]] && header="$(printHeader)"
+
+        # Repo
+        checkValue "git_url" "$gitUrl"
+        checkValue "git_commit" "$gitCommit"
+        if [[ "$refType" == "branch" ]] ; then
+          checkValue "git_branch" "$refName"
+        else
+          if git_branch="$(echo "$context" | jq -c '.event.repository.default_branch')" ; then
+            checkValue "git_branch" "$git_branch"
+          else
+            printBad "git_branch" "No value set, or problem with GitHub context.\n$git_branch"
+          fi
+        fi
+
+        # Description
+        if description="$(echo "$context" | jq -c '.event.repository.description')" ; then
+          checkValue "description" "$description"
+        else
+          printBad "description" "No value set, or problem with GitHub context.\n$description"
+        fi
+
+        # Homepage
+        if homepage="$(echo "$context" | jq -c '.event.repository.homepage')" ; then
+          checkValue "homepage" "$homepage"
+        else
+          printBad "homepage" "No value set, or problem with GitHub context.\n$homepage"
+        fi
+
+        # Topics
+        if topicsJSON="$(echo "$context" | jq -c '.event.repository.topics')" ; then
+          [[ "$topicsJSON" != "[]" ]] && [[ topicsJSON != "[ ]" ]] || printBad "topics" "No value set, please configure in the GitHub UI"
+          checkValue "topicsJSON" "$topicsJSON"
+        else
+          printBad "topics" "No value set, or problem with GitHub context.\n$topics[@]"
+        fi
+
+        if [[ "$strict" == "true" ]] && [[ "$problems" != "" ]] ; then
+          echo -e "\n### ❌ Error\n#### Problems" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        fi
+        echo "done"
+      }
+
+      function checkValue {
+        local name="$1" ; local value="$2" ; local problemMsg="$3"
+        [[ "$problemMsg" == "" ]] && problemMsg="No value set, please configure in the GitHub UI"
+        if [[ "$value" == "" ]] || [[ "$value" == "null" ]]; then
+          printBad "$name" "$problemMsg"
+        else
+          printGood "$name" "$value"
+          echo "$name=$value" >> "$GITHUB_OUTPUT"
+        fi
+      }
+
+      function printHeader {
+        echo -e "|Status|Metadata|Message|\n|:---:|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        echo "done"
+      }
+
+      function printGood {
+        [[ "$verbose" == "true" ]] && echo -e "| 🟢 | $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"
+        echo "$1: $2"
+      }
+
+      function printBad {
+        [[ "$header" != "done" ]] && header="$(printHeader)"
+        echo -e "‼️ Error: $1 $2" >&2 ## Send message to stderr.
+        echo -e "| ❌ | $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"
+        problems="true"
+      }
+
       main "$@" ; exit
 
   - name: Version.Net Existence
@@ -181,6 +272,17 @@ runs:
 
         readarray -t projectArray <<< "$projects"
 
+        # Normalise paths
+        [[ "$(dirname "$solution")" -ef "$(pwd)" ]] || fail "Solution not in root directory:\n- $(dirname "$solution")\n- $(pwd)"
+        for i in "${!projectArray[@]}" ; do
+          fullPath="$(realpath "${projectArray[$i]}")"
+          if [[ -f $fullPath ]] ; then
+            projectArray[$i]="$fullPath"
+          else
+            fail "Project not found: ${projectArray[$i]} i.e. $fullPath"
+          fi
+        done
+
         # Convert to JSON
         err="Problem converting projects to JSON: "
         projectsJSON="$(jq --compact-output --null-input '$ARGS.positional' --args -- "${projectArray[@]}")" || fail "$err: $projectsJSON"
@@ -214,7 +316,7 @@ runs:
         echo "test_projects_json=$testProjectsJSON" >> "$GITHUB_OUTPUT"
         echo "prod_projects_json=$prodProjectsJSON" >> "$GITHUB_OUTPUT"
         echo "test_roject_count=$testProjectCount" >> "$GITHUB_OUTPUT"
-        echo "prod_project_count=$realProjectCount" >> "$GITHUB_OUTPUT"
+        echo "prod_project_count=$prodProjectCount" >> "$GITHUB_OUTPUT"
         echo -e "test_projects_json=\`$testProjectsJSON\`"
         echo -e "prod_projects_json=\`$prodProjectsJSON\`"
       }
@@ -229,7 +331,7 @@ runs:
       }
 
       function fail {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "‼️ Error: $1" >&2 ## Send message to stderr.
         echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
         exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
@@ -241,33 +343,32 @@ runs:
     shell: bash
     env:
       versionProj: ${{ steps.version_existence.outputs.proj_file }}
-      prodProjects: ${{ steps.solution.outputs.prod_projects_json }}
+      prodProjectsJson: ${{ steps.solution.outputs.prod_projects_json }}
       prodProjectCount: ${{ steps.solution.outputs.prod_project_count }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
     run: |
       main() {
         echo "Checking that Version.proj is referenced by production projects"
-        prodProjects="$(echo "$prodProjects" | jq -r '.[]')"
+        prodProjects="$(echo "$prodProjectsJson" | jq -r '.[]')" # Read JSON Array
         echo -e "| Status | Project | Message |\n|:---:|---|---|" >> "$GITHUB_STEP_SUMMARY"
 
         count=0
         problemMsg="Please see the [Version.Net documentation](https://github.com/StirlingLabs/Version.Net) for how to import it."
         for project in "${prodProjects[@]}" ; do
-          projectPath="$(realpath "$project")"
-          relativePath="$(realpath --relative-to="$projectPath" "$versionProj")"
+          relativePath="$(realpath --relative-to="$(dirname $project)" "$versionProj")"
           echo "$project -> $versionProj == $relativePath"
-          ## TODO: REMOVE THIS HACK
-          relativePath="../Version.proj"
           if [[ "$(doesProjectImport "$project")" == "true" ]] ; then
             echo "$project imports something"
             imports="$(getProjectImports "$project")"
             echo "- specifically \`$imports\`"
             i=0
             for import in "${imports[@]}" ; do
-              if [[ "$import" -ef "$relativePath" ]] ; then # -ef compares effective paths
+              if [[ "$import" == "$relativePath" ]] || [[ "$import" -ef "$relativePath" ]] ; then
                 i=$((i+1))
                 echo "${i}. Reference to Version.Net found in $project"
+              else
+                echo "${i}. [[ $import -ef $relativePath ]] is false"
               fi
             done
             [[ "$i" -eq 0 ]] && printBad "$project" "No Version.Net references found. $problemMsg"
@@ -286,7 +387,7 @@ runs:
       }
 
       function printGood {
-        [[ "$verbose" != "true" ]] && echo -e "| ✅ | $1 | |" >> "$GITHUB_STEP_SUMMARY"
+        [[ "$verbose" == "true" ]] && echo -e "| ✅ | $1 | |" >> "$GITHUB_STEP_SUMMARY"
       }
 
       function printOkay {
@@ -294,19 +395,26 @@ runs:
       }
 
       function printBad {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "‼️ Error: $1 $2" >&2 ## Send message to stderr.
         echo -e "| ❌ | $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"
       }
 
       function getProjectImports {
-        local projectFile="$1" ; local result ; local value
+        local projectFile="$1" ; local result ; local count ; local value
         echo "getProjectImports $projectFile" >&2
         if value=$(csprojcli attributevalue.get -p "$projectFile" -g "ImportGroup" -n "Import" -a "Project") ; then
-          echo "value=$value" >&2
-          echo "$value"
+          echo "csprojcli returned $value" >&2
+          count="$(echo "$value" | grep "ImportGroup.Import" --count --only-matching)"
+          [[ "$count" -eq 0 ]] && fail "Internal Error:\n- Problem while looking for Imports in $(projectName "$projectFile")\n- $value"
+          [[ "$count" -gt 1 ]] && echo "Found $count imports in $projectFile" >&2
+          local separator=""
+          while IFS="" read -r line || [[ -n "$line" ]] ; do
+            result="$result$separator${line#*\: }"
+            separator="\n"
+          done <<< "$value"
+          echo -e "$result"
         else
-          echo "else... value=$value" >&2
-          fail "Internal Error:\n- Problem while looking for Imports in $(projectName "$projectFile")\n- $value"
+          fail "Internal Error:\n- Problem while looking for Imports in $(projectName "$projectFile")\n- $result"
         fi
       }
 
@@ -338,19 +446,21 @@ runs:
       main "$@" ; exit
 
   - name: Version.Proj Metadata
-    id: metadata
+    id: check_metadata
     shell: bash
     if: steps.version_reference.outputs.found == 'true' 
     env:
       versionProj: ${{ steps.version_existence.outputs.proj_file }}
-      homepage: ${{ inputs.homepage }}
-      gitUrl: ${{ inputs.git_url }}
+      homepage: ${{ steps.repo.outputs.homepage }}
+      gitUrl: ${{ steps.repo.outputs.git_url }}
+      gitBranch: ${{ steps.repo.outputs.git_branch }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
-    run: |
+    run: | #TODO: Look into branch, make homepage a warning
       main() {
         echo "Checking for correct values in $versionProj"
         echo -e "|Status|Project|Message|\n|:---:|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
         problem=""
         #              NodeName  TestValue             Error Message
         printContains "Authors" "Stirling Labs Team"  "Credit others but always report that we create the NuPkg, so are at least one of the authors."
@@ -385,10 +495,11 @@ runs:
           [[ "$strict" == "true" ]] && fail "Version.Net metadata is not correct."
           [[ "$strict" == "false" ]] && echo "### ⚠️ Note: Version.Net metadata is not correct." >> "$GITHUB_STEP_SUMMARY"
         fi
+        echo "Done checking $versionProj"
       }
 
       function printGood {
-        [[ "$verbose" != "true" ]] && echo -e "| ✅ | $1 | |" >> "$GITHUB_STEP_SUMMARY"
+        [[ "$verbose" == "true" ]] && echo -e "| ✅ | $1 | |" >> "$GITHUB_STEP_SUMMARY"
       }
 
       function printOkay {
@@ -396,7 +507,7 @@ runs:
       }
 
       function printBad {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "‼️ Error: $1 $2" >&2 ## Send message to stderr.
         echo -e "| ❌ | $1 | $2 |" >> "$GITHUB_STEP_SUMMARY"
         problem="true"
       }
@@ -427,7 +538,7 @@ runs:
 
       function nodeExists {
         local projectFile="$versionProj" ; local nodeName="$1" ; local existence
-        if existence=$(csprojcli nodevalue.exists -p "$projectFile" -g PropertyGroup -n "$nodeName") ; then
+        if existence=$(csprojcli node.exists -p "$projectFile" -g PropertyGroup -n "$nodeName") ; then
           echo "${existence,,}"
         else
           fail "Internal problem; csprojcli failed: $existence"
@@ -435,10 +546,18 @@ runs:
       }
 
       function getNodeValue {
-        local projectFile="$versionProj" ; local nodeName="$1" ; local value
+        local projectFile="$versionProj" ; local nodeName="$1" ; local value ; local count ; local result ; local separator
         if [[ "$(nodeExists "$nodeName")" == "true" ]] ; then
           if value=$(csprojcli nodevalue.get -p "$projectFile" -g PropertyGroup -n "$nodeName") ; then
-            echo "$value"
+            local heading="PropertyGroup.$nodeName: "
+            count="$(echo "$value" | grep "$heading" --count --only-matching)"
+            [[ "$count" -eq 0 ]] && fail "Internal Error:\n- Problem while looking for Imports in $(projectName "$projectFile")\n- $value"
+            [[ "$count" -gt 1 ]] && echo "Found $count values" >&2
+            while IFS="" read -r line || [[ -n "$line" ]] ; do
+              result="$result$separator${line#"$heading"}"
+              separator="\n"
+            done <<< "$value"
+            echo "$result"
           else
             fail "Internal problem; csprojcli failed: $value"
           fi
@@ -458,7 +577,7 @@ runs:
       }
 
       function fail {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "‼️ Error: $1" >&2 ## Send message to stderr.
         echo -e "### ❌ Error ❌\n$1" >> "$GITHUB_STEP_SUMMARY"
         exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
@@ -470,14 +589,17 @@ runs:
     if: steps.version_reference.outputs.found == 'true'
     env:
       versionProj: ${{ steps.version_existence.outputs.proj_file }}
-      prodProjects: ${{ fromJSON(steps.solution.outputs.prod_projects_json) }}
+      prodProjectsJson: ${{ steps.solution.outputs.prod_projects_json }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
     run: |
       # Check that no csproj files override settings from Version.proj
       # This should be kept in sync with the list of properties in Version.proj
       main() {
-        problem="false"
+        echo "Checking for metadata shadowing of $versionProj"
+        prodProjects="$(echo "$prodProjectsJson" | jq -r '.[]')" # Read JSON Array
+
+        count=0 ; problem="false"
         for project in "${prodProjects[@]}" ; do
           count=$((count+1))
           echo "${count}. Checking for metadata shadowing in $project"
@@ -500,16 +622,16 @@ runs:
       }
 
       function good {
-        [[ "$verbose" != "true" ]] && echo "- ✅ $1" >> "$GITHUB_STEP_SUMMARY"
+        [[ "$verbose" == "true" ]] && echo "- ✅ $1" >> "$GITHUB_STEP_SUMMARY"
       }
 
       function bad {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "‼️ Error: $1" >&2 ## Send message to stderr.
         echo "- ❌ $1" >> "$GITHUB_STEP_SUMMARY"
       }
 
       function fail {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "‼️ Error: $1" >&2 ## Send message to stderr.
         echo -e "### ❌ Error ❌\n$1" >> "$GITHUB_STEP_SUMMARY"
         exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
@@ -531,13 +653,17 @@ runs:
     shell: bash
     env:
       projectExtension: ${{ steps.values.outputs.project_extension }}
-      testProjects: ${{ fromJSON(steps.solution.outputs.test_projects_json) }}
-      realProjects: ${{ fromJSON(steps.solution.outputs.prod_projects_json) }}
+      testProjectsJson: ${{ steps.solution.outputs.test_projects_json }}
+      prodProjectsJson: ${{ steps.solution.outputs.prod_projects_json }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
     run: | 
       main() {
         failure="false" ; inProject=""
+
+        testProjects="$(echo "$testProjectsJson" | jq -r '.[]')" # Read JSON
+        prodProjects="$(echo "$prodProjectsJson" | jq -r '.[]')" # Read JSON
+
         for project in "${testProjects[@]}" ; do
           inProject="in $(projectName "$project")"
           echo "Test project: $project"
@@ -592,7 +718,7 @@ runs:
 
       function good {
         echo -e "$1 $2"
-        [[ "$verbose" != "true" ]] && echo -e "- ✅ $1 $2" >> "$GITHUB_STEP_SUMMARY"
+        [[ "$verbose" == "true" ]] && echo -e "- ✅ $1 $2" >> "$GITHUB_STEP_SUMMARY"
       }
 
       function bad {
@@ -601,7 +727,7 @@ runs:
       }
 
       function fail {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "‼️ Error: $1 $2" >&2 ## Send message to stderr.
         echo -e "### ❌ Error ❌\n- $1" >> "$GITHUB_STEP_SUMMARY"
         exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
@@ -633,8 +759,8 @@ runs:
     id: build
     shell: bash
     env:
-      testProjects: ${{ fromJSON(steps.solution.outputs.test_projects_json) }}
-      realProjects: ${{ fromJSON(steps.solution.outputs.real_rojects_json) }}
+      testProjectsJson: ${{ steps.solution.outputs.test_projects_json }}
+      realProjectsJson: ${{ steps.solution.outputs.real_rojects_json }}
       packageOutputPath: ${{ steps.values.outputs.package_output_path }}
       isLibrary: ${{ inputs.library }}
       strict: ${{ steps.values.outputs.strict }}
@@ -643,7 +769,11 @@ runs:
       # Process C# projects to ensure PackageOutputPath & GeneratePackageOnBuild is set correctly
       main() {
         isLibrary="${isLibrary,,}" ; error="false"
-        echo -e "### Build details\n|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        
+        testProjects="$(echo "$testProjectsJson" | jq -r '.[]')" # Read JSON Array
+        prodProjects="$(echo "$prodProjectsJson" | jq -r '.[]')" # Read JSON Array
+
+        echo -e "|Status|Project|Package|Message|\n|:---:|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         
         for project in "${realProjects[@]}" ; do
 
@@ -691,7 +821,7 @@ runs:
 
       function printGood {
         local proj="$(projectName "$1")" ; local package="$2"
-        [[ "$verbose" != "true" ]] && echo -e "| ✅ | $proj | $package |  |" >> "$GITHUB_STEP_SUMMARY"
+        [[ "$verbose" == "true" ]] && echo -e "| ✅ | $proj | $package |  |" >> "$GITHUB_STEP_SUMMARY"
       }
 
       function printOkay {
@@ -754,7 +884,7 @@ runs:
       }
 
       function fail {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "‼️ Error: $1" >&2 ## Send message to stderr.
         echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
         exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
