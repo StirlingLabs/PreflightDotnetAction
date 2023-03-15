@@ -193,8 +193,8 @@ runs:
 
         # Summarise
         #shellcheck disable=SC2129
-        echo "### Projects\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
-        echo "| Status | Name | Path |" >> "$GITHUB_STEP_SUMMARY"
+        echo "### Projects" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Status | Name | Path |\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         problem="false"
         for project in "${projectArray[@]}" ; do
           if [[ -f "$project" ]] ; then
@@ -231,9 +231,9 @@ runs:
       main "$@" ; exit
 
   - name: Version.Proj Referenced
-    shell: bash
     id: v_reference
     if: steps.v_existence.outputs.projFile != ''
+    shell: bash
     env:
       versionProj: ${{ steps.v_existence.outputs.projFile }}
       realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
