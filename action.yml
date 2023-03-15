@@ -195,7 +195,6 @@ runs:
         #shellcheck disable=SC2129
         echo "### Projects identified" >> "$GITHUB_STEP_SUMMARY"
         echo "| Status | Name | Path |" >> "$GITHUB_STEP_SUMMARY"
-        echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         problem="false"
         for project in "${projectArray[@]}" ; do
           if [[ -f "$project" ]] ; then
@@ -206,7 +205,6 @@ runs:
           fi
           echo "$start | $project |" >> "$GITHUB_STEP_SUMMARY"
         done
-        echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         [[ "$problem" == "true" ]] && fail "Some projects were not found."
         #shellcheck disable=SC2129
         echo "projectsJSON=$projectsJSON" >> "$GITHUB_OUTPUT"
@@ -269,7 +267,6 @@ runs:
             printBad "$project" "Does not import anything. $problemMsg"
           fi
         done
-        echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         if [[ "$count" -eq "$realProjectCount" ]] ; then
           echo "found=true" >> "$GITHUB_OUTPUT"
         else
@@ -371,7 +368,6 @@ runs:
             printOkay "$node" "File not found at $value as indicated. Check it's copied into place by the csproj."
           fi
         done
-        echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         if [[ "$problem" == "true" ]] ; then
           [[ "$strict" == "true" ]] && fail "Version.Net metadata is not correct."
           [[ "$strict" == "false" ]] && echo "### ⚠️ Note: Version.Net metadata is not correct." >> "$GITHUB_STEP_SUMMARY"
@@ -671,7 +667,6 @@ runs:
 
         done
 
-        echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         if [[ "error" == "true" ]] ; then
           if [[ "$strict" == "true" ]] ; then
             fail "One or more problems found with logging, check log for."
