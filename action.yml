@@ -197,8 +197,7 @@ runs:
 
         # Summarise
         #shellcheck disable=SC2129
-        echo -e "### Projects Detected:\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
-        echo "| Status | Name | Path |" >> "$GITHUB_STEP_SUMMARY"
+        echo -e "| Status | Project | Path |\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
         problem="false"
         for project in "${projectArray[@]}" ; do
           if [[ -f "$project" ]] ; then
@@ -213,9 +212,11 @@ runs:
         #shellcheck disable=SC2129
         echo "projects_json=$projectsJSON" >> "$GITHUB_OUTPUT"
         echo "test_projects_json=$testProjectsJSON" >> "$GITHUB_OUTPUT"
-        echo "prod_projects_json=$realProjectsJSON" >> "$GITHUB_OUTPUT"
+        echo "prod_projects_json=$prodProjectsJSON" >> "$GITHUB_OUTPUT"
         echo "test_roject_count=$testProjectCount" >> "$GITHUB_OUTPUT"
         echo "prod_project_count=$realProjectCount" >> "$GITHUB_OUTPUT"
+        echo -e "test_projects_json=\n\`$testProjectsJSON\`"
+        echo -e "prod_projects_json=\n\`$prodProjectsJSON\`"
       }
 
       function projectName {
