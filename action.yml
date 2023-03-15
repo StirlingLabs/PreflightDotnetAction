@@ -49,7 +49,7 @@ runs:
         echo "projectExtension=$projectExtension" >> "$GITHUB_OUTPUT"
 
         # Find Solution
-        echo "Checking solution $solution"
+        echo "Finding solution, initially set to: \'$solution\'"
         if [[ ! -f "$solution" ]] ; then
           [[ "$solution" != *".sln" ]] && solution="${solution}.sln"
           if [[ ! -f "$solution" ]] ; then
@@ -61,19 +61,19 @@ runs:
             fi
           fi
         fi
+        echo "Solution found: \`$solution\`"
         echo "solution=$solution" >> "$GITHUB_OUTPUT"
 
         echo "### Processing $solution" >> "$GITHUB_STEP_SUMMARY"
+        echo "Strict Mode: $strict, Verbose: $verbose" >> "$GITHUB_STEP_SUMMARY"
 
         strict="${strict,,}"
-        [[ "$strict" == "false" ]] && heading="🔴 Strict Mode: OFF" || heading="🟢 Strict Mode: ON"
         echo "strict=$strict" >> "$GITHUB_OUTPUT"
 
         verbose="${verbose,,}"
-        [[ "$verbose" == "false" ]] && heading="$heading Verbose: OFF" || heading="$heading Verbose: ON"
         echo "verbose=$verbose" >> "$GITHUB_OUTPUT"
 
-        echo "#### ${heading}" >> "$GITHUB_STEP_SUMMARY"
+        echo "${heading}" 
       }
 
       function fail {
@@ -103,7 +103,7 @@ runs:
         echo "Checking for Version.Net project file"
         if [[ -f "$filename" ]] ; then
           echo "projFile=$(realpath "$filename")" >> "$GITHUB_OUTPUT"
-          echo "✅ Version.Net" >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ found Version.Net" >> "$GITHUB_STEP_SUMMARY"
         else
           msg="Please create $filename as per [readme](https://github.com/StirlingLabs/Version.Net#how-do-i-install-it)"
           fail "$filename not found. $msg"
@@ -142,7 +142,6 @@ runs:
         rmdir "$emptyDir" || fail "Could not remove $emptyDir"
         if csprojcli="$(which csprojcli)" ; then
           echo "csprojcli installed in $csprojcli"
-          echo "- ✅ csprojcli installed" >> "$GITHUB_STEP_SUMMARY"
         fi
       }
 
@@ -164,8 +163,6 @@ runs:
       verbose: ${{ steps.values.outputs.verbose }}
     run: |
       main() {
-        echo -e "### Identifying Projects in $solution" >> "$GITHUB_STEP_SUMMARY"
-
         # Interrogate Solution
         echo "Getting list of projects from $solution"
         if projects=$(dotnet sln "$solution" list | sed -e 1,2d) ; then
@@ -190,8 +187,8 @@ runs:
         realProjectCount=$(echo "$realProjectsJSON" | jq -r 'length') || fail "$err: $realProjectCount"
         echo "$testProjectCount test project(s) found."
         echo "$realProjectCount prod project(s) found."
-        [[ $testProjectCount -gt 0 ]] || fail "No test projects found."
-        [[ $realProjectCount -gt 0 ]] || fail "No non-test projects found."
+        [[ $testProjectCount -gt 0 ]] || fail "$testProjectCount test projects found.\n- Projects \`$projects\`\n- Test Projects (JSON) \`$testProjectsJSON\`\n- Prod Projects (JSON) \`$realProjectsJSON\`"
+        [[ $realProjectCount -gt 0 ]] || fail "$realProjectCount prod projects found.\n- Projects \`$projects\`\n- Prod Projects (JSON) \`$realProjectsJSON\`\n- Test Projects (JSON) \`$testProjectsJSON\`"
 
         # Summarise
         #shellcheck disable=SC2129
