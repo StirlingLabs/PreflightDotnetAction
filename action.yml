@@ -165,7 +165,7 @@ runs:
       main() {
         # Interrogate Solution
         echo "Getting list of projects from $solution"
-        if projects=$(dotnet sln "$solution" list | sed -e 1,2d) ; then
+        if projects="$(dotnet sln "$solution" list | sed -e 1,2d)" ; then
           echo "Solution interrogated"
         else
           fail "Problem interrogating solution: $projects"
@@ -181,9 +181,8 @@ runs:
         err="Problem converting projects to JSON: "
         projectsJSON="$(jq --compact-output --null-input '$ARGS.positional' --args -- "${projectArray[@]}")" || fail "$err: $projectsJSON"
         err="Problem processing JSON: "
-        echo "Using project extension: \`$projectExtension\`"
-        testProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests$projectExtension")))') || fail "$err: $testProjectsJSON"
-        realProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests$projectExtension") | not))') || fail "$err: $realProjectsJSON"
+        testProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests.csproj")))') || fail "$err: $testProjectsJSON"
+        realProjectsJSON=$(echo "$projectsJSON" | jq -c 'map(select(contains(".Tests.csproj") | not))') || fail "$err: $realProjectsJSON"
         testProjectCount=$(echo "$testProjectsJSON" | jq -r 'length') || fail "$err: $testProjectCount"
         realProjectCount=$(echo "$realProjectsJSON" | jq -r 'length') || fail "$err: $realProjectCount"
         echo "$testProjectCount test project(s) found."
