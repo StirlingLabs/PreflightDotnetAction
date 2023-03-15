@@ -215,8 +215,8 @@ runs:
         echo "prod_projects_json=$prodProjectsJSON" >> "$GITHUB_OUTPUT"
         echo "test_roject_count=$testProjectCount" >> "$GITHUB_OUTPUT"
         echo "prod_project_count=$realProjectCount" >> "$GITHUB_OUTPUT"
-        echo -e "test_projects_json=\n\`$testProjectsJSON\`"
-        echo -e "prod_projects_json=\n\`$prodProjectsJSON\`"
+        echo -e "test_projects_json=\`$testProjectsJSON\`"
+        echo -e "prod_projects_json=\`$prodProjectsJSON\`"
       }
 
       function projectName {
@@ -248,15 +248,17 @@ runs:
     run: |
       main() {
         echo "Checking that Version.proj is referenced by production projects"
-        echo -e "### Version.Net References\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
-        echo "prodProjects=$prodProjects"
         prodProjects="$(echo "$prodProjects" | jq -r '.[]')"
-        echo "prodProjects=$prodProjects"
+        echo -e "| Status | Project | Message |\n|:---:|---|---|" >> "$GITHUB_STEP_SUMMARY"
+
         count=0
         problemMsg="Please see the [Version.Net documentation](https://github.com/StirlingLabs/Version.Net) for how to import it."
         for project in "${prodProjects[@]}" ; do
-          relativePath="$(realpath --relative-to="$project" "$versionProj")"
-          echo "$project Version.proj -> $relativePath"
+          projectPath="$(realpath "$project")"
+          relativePath="$(realpath --relative-to="$projectPath" "$versionProj")"
+          echo "$project -> $versionProj == $relativePath"
+          ## TODO: REMOVE THIS HACK
+          relativePath="../Version.proj"
           if [[ "$(doesProjectImport "$project")" == "true" ]] ; then
             echo "$project imports something"
             imports="$(getProjectImports "$project")"
@@ -298,9 +300,12 @@ runs:
 
       function getProjectImports {
         local projectFile="$1" ; local result ; local value
-        if value=$(csprojcli nodevalue.get -p "$projectFile" -g "ImportGroup" -n "Import" -a "Project") ; then
+        echo "getProjectImports $projectFile" >&2
+        if value=$(csprojcli attributevalue.get -p "$projectFile" -g "ImportGroup" -n "Import" -a "Project") ; then
+          echo "value=$value" >&2
           echo "$value"
         else
+          echo "else... value=$value" >&2
           fail "Internal Error:\n- Problem while looking for Imports in $(projectName "$projectFile")\n- $value"
         fi
       }
@@ -308,7 +313,7 @@ runs:
       function doesProjectImport {
         local projectFile="$1" ; local result ; local value
         result="false"
-        if value="$(csprojcli -p "$projectFile" -g "ImportGroup" -n "Import" -a "Project")" ; then
+        if value="$(csprojcli attribute.exists -p "$projectFile" -g "ImportGroup" -n "Import" -a "Project")" ; then
           result="${value,,}"
         else
           fail "Internal Error:\n- Problem while looking for Imports in $(projectName "$projectFile")\n- $value"
@@ -326,7 +331,7 @@ runs:
       }
 
       function fail {
-        printf '%s\n' "‼️ Error: $1" >&2 ## Send message to stderr.
+        echo -e "‼️ Error: $1" >&2 ## Send message to stderr.
         echo -e "\n### ❌ Error\n#### $1" >> "$GITHUB_STEP_SUMMARY"
         exit "${2-1}" ## Exit code specified by $2, or 1 by default.
       }
@@ -345,9 +350,9 @@ runs:
     run: |
       main() {
         echo "Checking for correct values in $versionProj"
-        echo -e "### Version.Net Metadata\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        echo -e "|Status|Project|Message|\n|:---:|---|---|" >> "$GITHUB_STEP_SUMMARY"
         problem=""
-        #          NodeName  TestType  TestValue      Error Message
+        #              NodeName  TestValue             Error Message
         printContains "Authors" "Stirling Labs Team"  "Credit others but always report that we create the NuPkg, so are at least one of the authors."
         printContains "Owners" "Stirling Labs"        "Credit others as authors but always report that we own the NuPkg."
         printEquality "Company" "Stirling Labs"       "The company is Stirling Labs"
