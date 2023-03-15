@@ -197,7 +197,7 @@ runs:
 
         # Summarise
         #shellcheck disable=SC2129
-        echo -e "| Status | Project | Path |\n|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+        echo -e "| Status | Project | Path |\n|:---:|---|---|" >> "$GITHUB_STEP_SUMMARY"
         problem="false"
         for project in "${projectArray[@]}" ; do
           if [[ -f "$project" ]] ; then
