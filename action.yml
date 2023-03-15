@@ -112,8 +112,9 @@ runs:
       verbose: ${{ steps.values.outputs.verbose }}
     run: |
       main() {
-        echo "Checking for Version.Net submodule"
-        if [[ ! -d "submoduleDir" ]] ; then
+        echo "Checking for Version.Net submodule in $submoduleDir"
+        if [[ ! -d "$submoduleDir" ]] ; then
+          ls -la
           msg="Install [https://github.com/StirlingLabs/Version.Net](Version.Net) as specified in the README.md"
           [[ "$strict" == "true" ]] && fail "Version.Net not found at $submoduleDir. $msg"
         fi
