@@ -84,7 +84,7 @@ runs:
       main "$@" ; exit
 
   - name: Version.Net Existance
-    id: version-existance
+    id: version_existance
     shell: bash
     env:
       filename: Version.proj
@@ -234,10 +234,10 @@ runs:
 
   - name: Version.Proj Referenced
     shell: bash
-    id: version-reference
-    if: ${{ steps.version-existence.outputs.projFile != '' }}
+    id: version_reference
+    if: steps.version_existence.outputs.projFile != ''
     env:
-      versionProj: ${{ steps.version-existence.outputs.projFile }}
+      versionProj: ${{ steps.version_existence.outputs.projFile }}
       realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
       realProjectCount: ${{ steps.solution.outputs.realProjectCount }}
       strict: ${{ steps.values.outputs.strict }}
@@ -330,9 +330,9 @@ runs:
   - name: Version.Proj Metadata
     id: metadata
     shell: bash
-    if: steps.version-reference.outputs.found == 'true' 
+    if: steps.version_reference.outputs.found == 'true' 
     env:
-      versionProj: ${{ steps.version-existence.outputs.projFile }}
+      versionProj: ${{ steps.version_existence.outputs.projFile }}
       homepage: ${{ inputs.homepage }}
       gitUrl: ${{ inputs.gitUrl }}
       strict: ${{ steps.values.outputs.strict }}
@@ -458,9 +458,9 @@ runs:
   - name: Metadata Shadows
     id: metadata-shadowing
     shell: bash
-    if: steps.version-reference.outputs.found == 'true'
+    if: steps.version_reference.outputs.found == 'true'
     env:
-      versionProj: ${{ steps.version-existence.outputs.projFile }}
+      versionProj: ${{ steps.version_existence.outputs.projFile }}
       realProjects: ${{ fromJSON(steps.solution.outputs.realProjectsJSON) }}
       strict: ${{ steps.values.outputs.strict }}
       verbose: ${{ steps.values.outputs.verbose }}
